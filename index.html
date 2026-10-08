@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BK Combat Mock — Rooms / Melee / Rising</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- デバッグHUD -->
+<div id="hud">
+  <div>STATE: <span id="hudState">HUMAN</span></div>
+  <div>Room: <span id="hudRoom">HUB</span></div>
+  <div>Selected Target: <span id="hudTarget">NONE</span></div>
+  <div>Parts: <span id="hudArms">0 air / 0 ground</span></div>
+  <div>Enemy: <span id="hudEnemy">-</span></div>
+</div>
+
+<!-- クロスヘア -->
+<div id="crosshair"></div>
+
+<!-- 切断ターゲット / 敵ステータスバー / 胸元プロンプトはmain.jsが動的生成 -->
+
+<!-- スロー演出 -->
+<div id="slowOverlay" class="hidden"></div>
+<div id="slowLabel" class="hidden">SLOW</div>
+
+<!-- ライジングモード表示 -->
+<div id="risingLabel" class="hidden">RISING</div>
+
+<!-- 汎用フラッシュ -->
+<div id="flash"></div>
+
+<!-- 判定フィードバック -->
+<div id="feedback"></div>
+
+<!-- ボス戦（ダクトの男） -->
+<div id="scareVignette"></div>
+<div id="bossHud" class="hidden">
+  <div class="boss-top"><span id="bossName">DUCT MAN</span><span id="bossRound">ROUND 1 / 3</span></div>
+  <div id="bossBar"><i id="bossBarFill"></i></div>
+</div>
+<div id="bossCount" class="hidden">10.0</div>
+<div id="subtitle" class="hidden"></div>
+
+<!-- デモステージ（一本道のウェーブ戦） -->
+<div id="demoHud" class="hidden">
+  <span id="demoWave">WAVE 1 / 5</span>
+  <span id="demoLeft">ADVANCE</span>
+</div>
+
+<!-- プレイヤーステータス（左右下＝腕 / 中央下＝体・頭 ＋ リソース） -->
+<div id="playerHud">
+  <div class="hud-slot arm" id="slotArmL">
+    <div class="hp-circle" id="circleArmL"><i class="fill"></i><span class="num">100</span></div>
+    <div class="slot-tag" id="tagArmL">FIST</div>
+  </div>
+
+  <div class="hud-slot core" id="slotCore">
+    <div class="slot-tag" id="tagCore">BODY</div>
+    <div class="hp-circle" id="circleCore"><i class="fill"></i><span class="num">100</span></div>
+    <div id="resPips"></div>
+  </div>
+
+  <div class="hud-slot arm" id="slotArmR">
+    <div class="hp-circle" id="circleArmR"><i class="fill"></i><span class="num">100</span></div>
+    <div class="slot-tag" id="tagArmR">FIST</div>
+  </div>
+</div>
+
+<!-- 操作ヒント -->
+<div id="hint">
+  <b>人間</b> L/R Click パンチ&nbsp;&nbsp;長押し パージ&nbsp;&nbsp;Space キック&nbsp;&nbsp;Shift ドッジ&nbsp;&nbsp;G リセット&nbsp;&nbsp;<b>銃腕</b> Click 射撃 / 長押し 連射&nbsp;&nbsp;腕はヒット/射撃ごとに削れる<br>
+  <b>腕の切り替え 1=拳 / 2=銃 / 3=触手</b>&nbsp;&nbsp;<b>触手腕</b> 短押し 左右2コンボの薙ぎ払い（中距離・低威力・横に広い）&nbsp;&nbsp;長押し 前方へ伸ばして刺す → 刺したままマウスを大きく振ると敵を振り回せる → 離すとその方向へ投げる<br>
+  <b>腕の組み合わせ</b> 触手で拘束した敵には、もう片方の腕のダメージが通る（銃＝PINNED SHOT・ダメージ1.6倍 / 拳＝PINNED HIT / 触手の薙ぎ払い＝PINNED SWEEP）&nbsp;&nbsp;拘束中は崩れないがスタンは溜まり、溜め切って静かに離すとその場で崩れる（BREAK!）<br>
+  <b>Q 長押し = ライジング</b>&nbsp;&nbsp;その場に固定&nbsp;&nbsp;□に合わせて 左/右クリック ＝ 腕を取る（敵・死体・床に落ちた腕すべて共通／左クリック＝左手・右クリック＝右手に付く） / F 死体に乗っ取る&nbsp;&nbsp;Space 頭モードへ<br>
+  <b>頭モード</b> WASD 移動&nbsp;&nbsp;Space ジャンプ&nbsp;&nbsp;F 死体に乗っ取る&nbsp;&nbsp;<b>B ボス戦（ダクトの男）へ</b>&nbsp;&nbsp;<b>V デモステージ（一本道のウェーブ戦）へ</b>
+</div>
+
+<!-- スタート／ポーズオーバーレイ -->
+<div id="startOverlay">
+  <div class="start-box">
+    <div class="start-title">BRAIN KEEPER — COMBAT FLOW MOCK</div>
+    <div class="start-sub">クリックして開始（マウスをロックします / ESCで解除）</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

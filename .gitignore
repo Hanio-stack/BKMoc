@@ -1,0 +1,10 @@
+# 設計資料（非公開）
+BK_action-spec.md
+BK_combat-mock_spec.md
+
+# バックアップ・配布用zip
+fix/
+*.zip
+
+# ツール設定
+.claude/

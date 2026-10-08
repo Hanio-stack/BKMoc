@@ -1,0 +1,371 @@
+/* BK Combat Mock — UI styles (仮UI) */
+
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0a0c0e;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  color: #d8dcd4;
+  user-select: none;
+}
+
+canvas { display: block; }
+.hidden { display: none !important; }
+
+/* ---- デバッグHUD ---- */
+#hud {
+  position: fixed; top: 14px; left: 16px;
+  font-size: 13px; line-height: 1.7; letter-spacing: 0.05em;
+  color: #cfe3c8; text-shadow: 0 0 6px rgba(120, 200, 120, 0.25);
+  z-index: 20; pointer-events: none;
+}
+
+/* ---- クロスヘア ---- */
+#crosshair {
+  position: fixed; top: 50%; left: 50%;
+  width: 18px; height: 18px;
+  transform: translate(-50%, -50%);
+  z-index: 15; pointer-events: none;
+}
+#crosshair::before, #crosshair::after {
+  content: ""; position: absolute;
+  background: rgba(230, 235, 225, 0.9);
+}
+#crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+#crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+
+/* ---- 切断ターゲット ---- */
+.shoulder-target {
+  position: fixed;
+  width: 34px; height: 34px;
+  border: 2px solid rgba(255, 214, 90, 0.85);
+  transform: translate(-50%, -50%);
+  z-index: 12; pointer-events: none;
+  transition: width 0.08s, height 0.08s, border-color 0.08s;
+}
+.shoulder-target.selected {
+  width: 48px; height: 48px;
+  border-width: 3px; border-color: #ffef9e;
+  box-shadow: 0 0 14px rgba(255, 230, 130, 0.55), inset 0 0 8px rgba(255, 230, 130, 0.25);
+}
+/* 死体の首元は青系（切るのではなく乗っ取る対象） */
+.shoulder-target.corpse { border-color: rgba(130, 210, 255, 0.85); }
+.shoulder-target.corpse.selected {
+  border-color: #b8e8ff;
+  box-shadow: 0 0 18px rgba(110, 190, 255, 0.6), inset 0 0 10px rgba(110, 190, 255, 0.3);
+}
+
+/* 頭ターゲットは色を変えて「フィニッシュ」であることを示す */
+.shoulder-target.head { border-color: rgba(255, 110, 90, 0.85); }
+.shoulder-target.head.selected {
+  border-color: #ff9c86;
+  box-shadow: 0 0 18px rgba(255, 90, 70, 0.6), inset 0 0 10px rgba(255, 90, 70, 0.3);
+}
+
+/* ---- 敵ステータスバー ---- */
+.enemy-bars {
+  position: fixed; width: 90px;
+  transform: translate(-50%, -50%);
+  z-index: 11; pointer-events: none;
+}
+.enemy-bars .eb {
+  height: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  margin-bottom: 2px;
+}
+.enemy-bars .eb > i { display: block; height: 100%; width: 100%; }
+.enemy-bars .eb.hp > i { background: #cf4a44; }
+.enemy-bars .eb.stun > i { background: #ffd75e; }
+.enemy-bars .state {
+  font-size: 9px; letter-spacing: 0.08em; text-align: center;
+  color: rgba(220, 225, 215, 0.75); text-shadow: 0 0 4px #000;
+}
+.enemy-bars .state.windup { color: #ffb45e; }
+.enemy-bars .state.active { color: #ff5e5e; }
+.enemy-bars .state.stunned { color: #ffe98a; }
+
+/* ---- 胸元のインタラクトボタン ---- */
+.chest-prompt {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  z-index: 13; pointer-events: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 235, 150, 0.75);
+  background: rgba(30, 24, 10, 0.55);
+  font-size: 11px; letter-spacing: 0.14em;
+  color: #ffe98a;
+  text-shadow: 0 0 8px rgba(255, 210, 100, 0.5);
+  box-shadow: 0 0 14px rgba(255, 200, 90, 0.25);
+}
+.chest-prompt .key {
+  display: inline-block;
+  border: 1px solid rgba(255, 235, 150, 0.85);
+  padding: 0 5px;
+  font-weight: bold;
+}
+
+/* ---- スロー演出 ---- */
+#slowOverlay {
+  position: fixed; inset: 0;
+  z-index: 10; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(40,90,110,0.28) 100%);
+  mix-blend-mode: screen;
+}
+#slowLabel {
+  position: fixed; top: 40px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px; letter-spacing: 0.9em; padding-left: 0.9em;
+  color: rgba(180, 225, 240, 0.9);
+  text-shadow: 0 0 12px rgba(120, 200, 230, 0.6);
+  z-index: 20; pointer-events: none;
+}
+
+/* ---- ライジングモード表示 ---- */
+#risingLabel {
+  position: fixed; top: 72px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px; letter-spacing: 0.9em; padding-left: 0.9em;
+  color: rgba(255, 226, 150, 0.92);
+  text-shadow: 0 0 12px rgba(255, 190, 90, 0.6);
+  z-index: 20; pointer-events: none;
+}
+/* 頭が潰れた状態。自機が画面から消えるので、ここだけが手掛かりになる */
+#risingLabel.dead {
+  color: #ff7a68;
+  text-shadow: 0 0 14px rgba(255, 60, 40, 0.7);
+  animation: deadPulse 0.9s ease-in-out infinite;
+}
+#risingLabel.dead::after {
+  content: "[G] RESET";
+  display: block;
+  margin-top: 10px;
+  font-size: 12px; letter-spacing: 0.3em; padding-left: 0.3em;
+  color: rgba(255, 180, 165, 0.8);
+  text-shadow: none;
+}
+@keyframes deadPulse { 0%, 100% { opacity: 0.75; } 50% { opacity: 1; } }
+
+/* ---- フラッシュ ---- */
+#flash {
+  position: fixed; inset: 0;
+  z-index: 14; pointer-events: none;
+  opacity: 0; background: #fff;
+}
+
+/* ---- 判定フィードバック ---- */
+#feedback {
+  position: fixed; top: 32%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 34px; letter-spacing: 0.18em; font-weight: bold;
+  z-index: 21; pointer-events: none; opacity: 0; white-space: nowrap;
+}
+
+/* ---- プレイヤーHUD ----
+   左右下＝腕HP / 中央下＝体HP（頭モードでは頭HP）。
+   丸は上から下へ減る（下端から fill の高さを伸ばす）。
+   体HPの下にドッジ・キックのリソースが横並びで、左から減る。
+   3つの丸は「同じ高さ」＝中心のy座標を揃えてある（中央だけ少し大きい）。   */
+#playerHud { pointer-events: none; }
+
+.hud-slot {
+  position: fixed; bottom: 100px;
+  width: 64px; height: 64px;
+  z-index: 20; pointer-events: none;
+}
+#slotArmL { left: 46px; }
+#slotArmR { right: 46px; }
+#slotCore {
+  /* 中央だけ72px。中心のyを腕(100+32=132)に合わせるので bottom は 96px */
+  left: 50%; margin-left: -36px; bottom: 96px;
+  width: 72px; height: 72px;
+}
+/* 頭モードでは腕がない */
+#playerHud.head .hud-slot.arm { display: none; }
+
+.hp-circle {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(230, 235, 225, 0.30);
+  background: rgba(6, 9, 11, 0.62);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.55), inset 0 0 10px rgba(0, 0, 0, 0.5);
+}
+/* 残量。--hp は main.js が毎フレーム更新する */
+.hp-circle > .fill {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: var(--hp, 100%);
+  display: block;
+  background: #b9c4b0;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.18);
+  transition: height 0.10s linear;
+}
+.hp-circle > .num {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; letter-spacing: 0.06em;
+  color: rgba(238, 243, 235, 0.92);
+  text-shadow: 0 0 4px #000, 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* 体 */
+#circleCore > .fill { background: #7fc4a0; }
+#circleCore { border-color: rgba(160, 220, 190, 0.40); }
+/* 頭モード：出血で減っていく赤 */
+#circleCore.head > .fill {
+  background: linear-gradient(to top, #7a1512 0%, #c8443c 100%);
+  transition: none;                      /* 0.25s刻みで減るので補間しない */
+}
+#circleCore.head {
+  border-color: rgba(255, 120, 100, 0.55);
+  box-shadow: 0 0 16px rgba(200, 60, 50, 0.35), inset 0 0 12px rgba(0, 0, 0, 0.55);
+  animation: corePulse 1.0s ease-in-out infinite;
+}
+@keyframes corePulse {
+  0%, 100% { border-color: rgba(255, 120, 100, 0.45); }
+  50%      { border-color: rgba(255, 170, 150, 0.9); }
+}
+.hp-circle.low { border-color: rgba(255, 90, 70, 0.85); }
+
+/* 腕：状態で色を変える（敵の腕＝赤 / 銃腕＝黄 / パージ＝くすむ）。
+   基準色は .hp-circle > .fill 側。ここをID指定にすると状態色に勝ってしまう */
+.hp-circle.swapped > .fill { background: #d2695c; }
+.hp-circle.gun > .fill { background: #d8c98a; }
+.hp-circle.tent > .fill { background: #c0607a; }   /* 触手腕 */
+.hp-circle.purged > .fill { background: #6f7a70; }
+.hp-circle.lost { border-style: dashed; border-color: rgba(255, 255, 255, 0.12); }
+.hp-circle.lost > .num { color: #ff8f7a; mix-blend-mode: normal; filter: none; }
+
+.slot-tag {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  font-size: 10px; letter-spacing: 0.16em; white-space: nowrap;
+  color: rgba(200, 205, 195, 0.55);
+  text-shadow: 0 0 6px #000;
+}
+.hud-slot.arm .slot-tag { bottom: -16px; }
+#tagCore { top: -18px; color: rgba(200, 225, 210, 0.6); }
+#playerHud.head #tagCore { color: rgba(255, 150, 130, 0.85); }
+
+/* リソース（ドッジ／キック）。体の丸の下に中央ぞろえ、左から減る */
+#resPips {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: -26px;
+  display: flex; gap: 7px;
+}
+.pip {
+  position: relative;
+  width: 12px; height: 12px; border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid rgba(140, 200, 230, 0.45);
+  background: rgba(0, 0, 0, 0.45);
+}
+.pip.full {
+  background: #6fb6d8;
+  border-color: rgba(160, 220, 245, 0.9);
+  box-shadow: 0 0 8px rgba(110, 180, 215, 0.55);
+}
+.pip > i {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: block; height: 0;
+  background: rgba(110, 180, 215, 0.45);
+}
+#resPips.muted { opacity: 0.28; }        /* 頭モード＝キックもドッジも出せない */
+
+/* ---- ボス戦（ダクトの男）---- */
+#bossHud {
+  position: fixed; top: 26px; left: 50%;
+  transform: translateX(-50%);
+  width: 520px; max-width: 60vw;
+  z-index: 19; pointer-events: none;
+}
+.boss-top {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12px; letter-spacing: 0.22em; margin-bottom: 6px;
+}
+#bossName { color: #7fd8ec; text-shadow: 0 0 10px rgba(80, 200, 230, 0.5); }
+#bossRound { color: rgba(200, 205, 195, 0.55); letter-spacing: 0.16em; }
+#bossBar {
+  height: 10px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(160, 220, 240, 0.35);
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.6);
+}
+#bossBar > i {
+  display: block; height: 100%; width: 100%;
+  background: linear-gradient(to bottom, #d8564a, #8e2b24);
+  transition: width 0.12s linear;
+}
+
+/* かくれんぼのカウントダウン */
+#bossCount {
+  position: fixed; top: 15%; left: 50%;
+  transform: translateX(-50%);
+  font-size: 64px; letter-spacing: 0.08em; font-weight: bold;
+  color: rgba(230, 240, 235, 0.9);
+  text-shadow: 0 0 22px rgba(0, 0, 0, 0.9), 0 0 40px rgba(120, 200, 230, 0.25);
+  z-index: 19; pointer-events: none;
+}
+#bossCount.urgent {
+  color: #ff6b5e;
+  text-shadow: 0 0 26px rgba(255, 60, 40, 0.7);
+  animation: countPulse 0.5s ease-in-out infinite;
+}
+@keyframes countPulse { 0%, 100% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.14); } }
+
+/* ---- デモステージのウェーブ表示 ---- */
+#demoHud {
+  position: fixed; top: 26px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 18px; align-items: baseline;
+  padding: 6px 16px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 210, 120, 0.28);
+  font-size: 13px; letter-spacing: 0.22em;
+  z-index: 19; pointer-events: none;
+}
+#demoWave { color: #ffd75e; text-shadow: 0 0 10px rgba(255, 200, 90, 0.45); }
+#demoLeft { color: rgba(200, 205, 195, 0.6); letter-spacing: 0.16em; }
+
+/* 字幕 */
+#subtitle {
+  position: fixed; bottom: 180px; left: 50%;
+  transform: translateX(-50%);
+  max-width: 74vw; text-align: center;
+  font-size: 17px; letter-spacing: 0.09em; line-height: 1.6;
+  color: #e6ebe0;
+  text-shadow: 0 0 8px #000, 0 2px 6px rgba(0, 0, 0, 0.9);
+  z-index: 19; pointer-events: none;
+}
+
+/* ジャンプスケアの赤いふち */
+#scareVignette {
+  position: fixed; inset: 0;
+  z-index: 13; pointer-events: none; opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(120,10,6,0.85) 100%);
+  transition: opacity 0.08s linear;
+}
+
+/* ---- 操作ヒント ---- */
+#hint {
+  position: fixed; bottom: 12px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px; letter-spacing: 0.05em; line-height: 1.5;
+  color: rgba(200, 205, 195, 0.5);
+  text-align: center;
+  z-index: 20; pointer-events: none; white-space: nowrap;
+}
+#hint b { color: rgba(255, 226, 150, 0.85); font-weight: normal; }
+
+/* ---- スタートオーバーレイ ---- */
+#startOverlay {
+  position: fixed; inset: 0;
+  z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 8, 10, 0.85);
+  cursor: pointer;
+}
+.start-box { text-align: center; }
+.start-title { font-size: 22px; letter-spacing: 0.3em; color: #e6ebe0; margin-bottom: 16px; }
+.start-sub { font-size: 13px; color: rgba(200, 205, 195, 0.7); letter-spacing: 0.1em; }
