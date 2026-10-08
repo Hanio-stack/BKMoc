@@ -63,6 +63,13 @@ canvas { display: block; }
   box-shadow: 0 0 18px rgba(255, 90, 70, 0.6), inset 0 0 10px rgba(255, 90, 70, 0.3);
 }
 
+/* 棚の腕は何度でも取れるので、奪う□（黄）とは別の色にして区別する */
+.shoulder-target.rack { border-color: rgba(150, 230, 170, 0.8); }
+.shoulder-target.rack.selected {
+  border-color: #bdf4cd;
+  box-shadow: 0 0 16px rgba(130, 230, 160, 0.55), inset 0 0 9px rgba(130, 230, 160, 0.28);
+}
+
 /* ---- 敵ステータスバー ---- */
 .enemy-bars {
   position: fixed; width: 90px;
@@ -347,16 +354,98 @@ canvas { display: block; }
   transition: opacity 0.08s linear;
 }
 
-/* ---- 操作ヒント ---- */
-#hint {
-  position: fixed; bottom: 12px; left: 50%;
-  transform: translateX(-50%);
-  font-size: 11px; letter-spacing: 0.05em; line-height: 1.5;
-  color: rgba(200, 205, 195, 0.5);
-  text-align: center;
-  z-index: 20; pointer-events: none; white-space: nowrap;
+/* ---- 操作説明（看板をFで開く） ---- */
+/* 読んでいるあいだは戦闘中のUIを引っ込める（デバッグHUDは残す） */
+body.manual-on #crosshair,
+body.manual-on #playerHud,
+body.manual-on #feedback { display: none; }
+
+#manual {
+  position: fixed; inset: 0;
+  z-index: 40;
+  display: flex; align-items: center; justify-content: center; gap: 18px;
+  background: rgba(6, 8, 10, 0.88);
+  pointer-events: none;
 }
-#hint b { color: rgba(255, 226, 150, 0.85); font-weight: normal; }
+.manual-box {
+  width: min(560px, 76vw);
+  border: 1px solid rgba(255, 235, 150, 0.35);
+  background: rgba(14, 17, 21, 0.96);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+  padding: 14px 18px 12px;
+}
+.manual-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 11px; letter-spacing: 0.18em;
+  color: rgba(255, 226, 150, 0.8);
+  border-bottom: 1px solid rgba(255, 235, 150, 0.2);
+  padding-bottom: 7px;
+}
+.manual-head #manualCount { color: rgba(200, 205, 195, 0.45); letter-spacing: 0.1em; }
+
+#manualArt {
+  margin: 12px 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: #0b0e11;
+}
+#manualArt svg { display: block; width: 100%; height: auto; }
+
+#manualTitle {
+  font-size: 19px; letter-spacing: 0.1em; color: #e9ede2;
+}
+#manualKeys {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 9px 0 10px;
+  font-size: 11px; letter-spacing: 0.06em;
+}
+#manualKeys .mk {
+  border: 1px solid rgba(255, 235, 150, 0.8);
+  background: rgba(30, 24, 10, 0.55);
+  color: #ffe98a;
+  padding: 2px 8px; font-weight: bold;
+}
+#manualKeys .mm { color: rgba(200, 205, 195, 0.65); }
+#manualKeys .msep { color: rgba(200, 205, 195, 0.3); margin: 0 2px; }
+
+#manualDesc {
+  font-size: 12px; line-height: 1.75;
+  color: rgba(205, 210, 200, 0.78);
+  min-height: 42px;
+}
+
+/* ページ位置。カテゴリの切れ目だけ間を空けて「章」が見えるようにする */
+#manualDots {
+  display: flex; align-items: center; gap: 4px;
+  margin: 12px 0 2px;
+}
+#manualDots i {
+  width: 5px; height: 5px;
+  background: rgba(200, 205, 195, 0.22);
+}
+#manualDots i.gap { margin-left: 9px; }
+#manualDots i.on { background: #ffd75e; box-shadow: 0 0 7px rgba(255, 215, 94, 0.7); }
+
+.manual-foot {
+  margin-top: 8px;
+  font-size: 11px; letter-spacing: 0.1em;
+  color: rgba(200, 205, 195, 0.45);
+}
+
+/* ページ送りの示唆。看板（＝パネル）の両サイドに出す */
+.manual-side {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  color: rgba(200, 205, 195, 0.5);
+  font-size: 11px; letter-spacing: 0.1em;
+}
+.manual-side .marrow { font-size: 20px; color: rgba(255, 226, 150, 0.6); line-height: 1; }
+.manual-side .mcap { font-size: 10px; }
+.mkey {
+  display: inline-block;
+  border: 1px solid rgba(255, 235, 150, 0.8);
+  background: rgba(30, 24, 10, 0.55);
+  color: #ffe98a;
+  padding: 2px 8px; font-weight: bold; font-size: 12px;
+}
 
 /* ---- スタートオーバーレイ ---- */
 #startOverlay {

@@ -1334,6 +1334,15 @@ document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
   if (!locked() || e.repeat) return;
+
+  // 操作説明を開いているあいだは、ページ送りと閉じる以外の入力を通さない
+  if (manualOpen) {
+    if (e.code === 'KeyF' || e.code === 'Escape') closeManual();
+    else if (e.code === 'KeyA') manualTurn(-1);
+    else if (e.code === 'KeyD') manualTurn(1);
+    return;
+  }
+
   if (e.code === 'KeyG') { resetAll(); return; }
   if (e.code === 'KeyB') { warpToBoss(); return; }
   if (e.code === 'KeyV') { startDemo(); return; }
@@ -1349,13 +1358,20 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.code === 'KeyF') {
-    // 頭モード：近くの死体に乗り移る
-    if (state === S.HEAD) { startPossess(findCorpseNearby()); return; }
+    // 頭モード：近くの死体に乗り移る。死体がなければ看板を読む
+    if (state === S.HEAD) {
+      const c = findCorpseNearby();
+      if (c) { startPossess(c); return; }
+      if (signInRange()) openManual();
+      return;
+    }
     // ライジング：□が死体なら首が飛んで乗り移る
     // 腕は□＋クリックで取るので、Fは「体を取る」だけに絞ってある
     if (selectedTarget && selectedTarget.kind === 'corpse') {
       startPossess(selectedTarget.corpse); return;
     }
+    // 人間モード：棚の横の看板に近ければ操作説明を開く
+    if (state === S.HUMAN && signInRange()) openManual();
     return;
   }
 
@@ -1380,7 +1396,7 @@ document.addEventListener('keyup', (e) => {
 });
 
 document.addEventListener('mousedown', (e) => {
-  if (!locked()) return;
+  if (!locked() || manualOpen) return;
   const side = e.button === 0 ? 'LEFT' : e.button === 2 ? 'RIGHT' : null;
   if (!side) return;
 
@@ -1397,6 +1413,9 @@ document.addEventListener('mousedown', (e) => {
     } else if (selectedTarget && selectedTarget.kind === 'groundArm') {
       triggerLegSwing();
       takeGroundArm(selectedTarget, side);
+    } else if (selectedTarget && selectedTarget.kind === 'rackArm') {
+      triggerLegSwing();
+      takeRackArm(selectedTarget, side);
     }
     return;
   }
@@ -1427,7 +1446,7 @@ document.addEventListener('mouseup', (e) => {
 });
 
 document.addEventListener('mousemove', (e) => {
-  if (!locked() || BOSS.camLock) return;   // ジャンプスケア中は視点を奪う
+  if (!locked() || BOSS.camLock || manualOpen) return;   // ジャンプスケア／操作説明中は視点を奪う
   yaw -= e.movementX * CONFIG.mouseSensitivity;
   pitch -= e.movementY * CONFIG.mouseSensitivity;
   pitch = Math.max(-1.45, Math.min(1.45, pitch));
@@ -1438,6 +1457,7 @@ const startOverlay = document.getElementById('startOverlay');
 startOverlay.addEventListener('click', () => renderer.domElement.requestPointerLock());
 document.addEventListener('pointerlockchange', () => {
   startOverlay.classList.toggle('hidden', locked());
+  if (!locked() && manualOpen) closeManual();
 });
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -1649,6 +1669,7 @@ function inFinisher() {
 // ライジング中（RISE_IN / RISING / RISE_OUT）はその場に固定。
 // 掴みフィニッシャー中も足を止める（敵を引き寄せる演出なので自分が動くと崩れる）
 function canMove() {
+  if (manualOpen) return false;        // 操作説明を読んでいるあいだは足を止める
   if (inFinisher()) return false;
   return state === S.HUMAN || state === S.HEAD;
 }
@@ -4195,6 +4216,7 @@ function updateTargets() {
       for (const key of ['LEFT', 'RIGHT']) if (c.armEls[key]) c.armEls[key].classList.add('hidden');
     }
     for (const p of severedParts) if (p.el) p.el.classList.add('hidden');
+    for (const sl of RACK.slots) sl.el.classList.add('hidden');
     selectedTarget = null;
     return;
   }
@@ -4276,7 +4298,25 @@ function updateTargets() {
     }
   }
 
+  // --- 腕の棚（何度でも取れる見本）---
+  for (const sl of RACK.slots) {
+    if (playerPos.distanceTo(sl.world) > RACK.range) { sl.el.classList.add('hidden'); continue; }
+    const scr = projectToScreen(sl.world);
+    if (!scr.front) { sl.el.classList.add('hidden'); continue; }
+    sl.el.classList.remove('hidden');
+    sl.el.style.left = scr.x + 'px';
+    sl.el.style.top = scr.y + 'px';
+    const d = Math.hypot(scr.x - cx, scr.y - cy);
+    if (d < targetRadius() && d < bestDist) {
+      best = { kind: 'rackArm', slot: sl, el: sl.el, world: sl.world.clone() };
+      bestDist = d;
+    }
+  }
+
   selectedTarget = best;
+  for (const sl of RACK.slots) {
+    sl.el.classList.toggle('selected', best !== null && sl.el === best.el);
+  }
   for (const p of severedParts) {
     if (p.el) p.el.classList.toggle('selected', best !== null && p.el === best.el);
   }
@@ -5600,6 +5640,828 @@ function resetAll() {
 }
 
 /* =========================================================
+   操作説明（MANUAL）
+
+   棚の横の看板をFでインタラクトすると開く。1ページ＝1動作。
+   F で閉じる / A で前ページ / D で次ページ。
+   開いている間は移動も攻撃も視点も止まる（入力を全部マニュアルが食う）。
+
+   図は外部画像を使わず、その場で組み立てたSVGで描いている。
+   zip配布をやめてURL配信にしたので、画像ファイルを足さずに済ませたい。
+   色はゲーム本編のマテリアルと同じ値を使って、図と実物を結び付けている。
+   ========================================================= */
+
+const ART = { W: 360, H: 200 };
+const C_ARM = '#e8e4da', C_ENEMY_ARM = '#b5493f', C_GUN = '#6b6f7a', C_BARREL = '#2a2c31';
+const C_TENT = '#9c4a52', C_TENT_TIP = '#c2707a', C_TORSO = '#5c5464', C_HEAD = '#827a8c';
+const C_LEG = '#3a3542', C_FLESH = '#8d3a33', C_HI = '#ffd75e', C_COOL = '#9ce8ff';
+
+const n1 = (v) => Math.round(v * 10) / 10;
+
+function aRect(x, y, w, h, fill, extra) {
+  return '<rect x="' + n1(x) + '" y="' + n1(y) + '" width="' + n1(w) + '" height="' + n1(h) +
+         '" fill="' + fill + '"' + (extra || '') + '/>';
+}
+function aLine(x1, y1, x2, y2, col, w, extra) {
+  return '<path d="M' + n1(x1) + ' ' + n1(y1) + ' L' + n1(x2) + ' ' + n1(y2) +
+         '" stroke="' + col + '" stroke-width="' + (w || 2) + '" stroke-linecap="round"' +
+         (extra || '') + '/>';
+}
+function aText(x, y, t, o) {
+  o = o || {};
+  return '<text x="' + n1(x) + '" y="' + n1(y) + '" fill="' + (o.col || 'rgba(205,210,200,0.8)') +
+         '" font-size="' + (o.size || 12) + '" font-family="ui-monospace,monospace"' +
+         ' text-anchor="' + (o.anchor || 'middle') + '">' + t + '</text>';
+}
+// 矢印。操作の向き（移動・振り・飛ぶ方向）は全部これで描く
+function aArrow(x1, y1, x2, y2, col, w) {
+  const a = Math.atan2(y2 - y1, x2 - x1), h = (w || 3) * 2.6;
+  const p = (ang) => n1(x2 - Math.cos(a + ang) * h) + ' ' + n1(y2 - Math.sin(a + ang) * h);
+  return aLine(x1, y1, x2, y2, col, w) +
+         '<polygon points="' + n1(x2) + ' ' + n1(y2) + ' ' + p(0.42) + ' ' + p(-0.42) +
+         '" fill="' + col + '"/>';
+}
+function aCross(x, y, col) {
+  const c = col || '#e6ebe1';
+  return aLine(x - 9, y, x + 9, y, c, 2) + aLine(x, y - 9, x, y + 9, c, 2);
+}
+// ライジングで出る□。本編の .shoulder-target と同じ意味で使う
+function aSquare(x, y, s, col) {
+  return '<rect x="' + n1(x - s / 2) + '" y="' + n1(y - s / 2) + '" width="' + n1(s) +
+         '" height="' + n1(s) + '" fill="none" stroke="' + (col || C_HI) + '" stroke-width="2.5"/>';
+}
+function aBurst(x, y, k, col) {
+  let s = '';
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4 + 0.22;
+    s += aLine(x + Math.cos(a) * 7 * k, y + Math.sin(a) * 7 * k,
+               x + Math.cos(a) * 21 * k, y + Math.sin(a) * 21 * k, col || C_HI, 3 * k);
+  }
+  return s;
+}
+function aArc(cx, cy, r, a0, a1, col, w) {
+  const x0 = cx + Math.cos(a0) * r, y0 = cy + Math.sin(a0) * r;
+  const x1 = cx + Math.cos(a1) * r, y1 = cy + Math.sin(a1) * r;
+  return '<path d="M' + n1(x0) + ' ' + n1(y0) + ' A ' + n1(r) + ' ' + n1(r) + ' 0 0 ' +
+         (a1 > a0 ? 1 : 0) + ' ' + n1(x1) + ' ' + n1(y1) +
+         '" fill="none" stroke="' + col + '" stroke-width="' + (w || 3) +
+         '" stroke-linecap="round"/>';
+}
+
+/* ---------- 背景（部屋の床） ---------- */
+function aStage(inner) {
+  let s = aRect(0, 0, 360, 200, '#0f1215') + aRect(0, 0, 360, 126, '#0b0e11');
+  for (let i = 1; i <= 5; i++) {
+    const y = 126 + Math.pow(i / 5, 1.9) * 74;
+    s += aLine(0, y, 360, y, '#222a32', 1);
+  }
+  for (let i = -4; i <= 4; i++) s += aLine(180, 126, 180 + i * 92, 200, '#222a32', 1);
+  return s + inner;
+}
+
+/* ---------- 敵（正面・箱人間。本編のマテリアルと同じ色） ---------- */
+function aEnemy(cx, k, o) {
+  o = o || {};
+  const feet = (o.feet === undefined) ? 172 : o.feet;
+  const ac = o.armColor || C_ENEMY_ARM;
+  let s = '<g opacity="' + (o.op === undefined ? 1 : o.op) + '">';
+  s += aRect(cx - 11 * k, feet - 30 * k, 22 * k, 30 * k, C_LEG);
+  s += aRect(cx - 28 * k, feet - 76 * k, 9 * k, 42 * k, ac);
+  s += aRect(cx + 19 * k, feet - 76 * k, 9 * k, 42 * k, ac);
+  s += aRect(cx - 18 * k, feet - 78 * k, 36 * k, 50 * k, C_TORSO);
+  if (o.headless) s += aRect(cx - 9 * k, feet - 86 * k, 18 * k, 9 * k, C_FLESH);
+  else s += aRect(cx - 11 * k, feet - 100 * k, 22 * k, 21 * k, o.headColor || C_HEAD);
+  if (o.stun) s += aText(cx, feet - 108 * k, 'STUNNED', { size: 11, col: '#ffe98a' });
+  s += '</g>';
+  return s;
+}
+// 首から上がない死体（座っている）
+function aCorpse(cx, k) {
+  let s = aRect(cx - 17 * k, 172 - 36 * k, 34 * k, 36 * k, C_TORSO);
+  s += aRect(cx - 26 * k, 172 - 32 * k, 8 * k, 30 * k, C_ENEMY_ARM);
+  s += aRect(cx + 18 * k, 172 - 32 * k, 8 * k, 30 * k, C_ENEMY_ARM);
+  s += aRect(cx - 8 * k, 172 - 42 * k, 16 * k, 8 * k, C_FLESH);
+  return s;
+}
+
+/* ---------- 一人称の腕 ----------
+   画面下の隅から手首が出て、クロスヘア（180, 78）の方を向く。
+   ext=0 で構え、ext=1 で振り抜き。腕の種類で手先だけ差し替える        */
+function aArm(side, kind, ext, o) {
+  o = o || {};
+  ext = ext || 0;
+  const sg = (side === 'L') ? -1 : 1;
+  const bx = 180 + sg * 130, by = 238;
+  const hx = (o.hx === undefined) ? 180 + sg * (88 - 50 * ext) : o.hx;
+  const hy = (o.hy === undefined) ? 164 - 50 * ext : o.hy;
+  const dx = hx - bx, dy = hy - by, L = Math.max(1, Math.hypot(dx, dy));
+  const nx = -dy / L, ny = dx / L;
+  const wB = 17, wH = 10 + 4 * ext;
+  const col = (kind === 'gun') ? C_GUN : (kind === 'tentacle') ? C_TENT : C_ARM;
+  let s = '<polygon points="' +
+    [[bx + nx * wB, by + ny * wB], [bx - nx * wB, by - ny * wB],
+     [hx - nx * wH, hy - ny * wH], [hx + nx * wH, hy + ny * wH]]
+      .map((p) => n1(p[0]) + ' ' + n1(p[1])).join(' ') +
+    '" fill="' + col + '" stroke="#0b0d10" stroke-width="2"/>';
+
+  // 手先の向き（クロスヘアの方）
+  const ax = (o.aimX === undefined ? 180 : o.aimX) - hx;
+  const ay = (o.aimY === undefined ? 78 : o.aimY) - hy;
+  const aL = Math.max(1, Math.hypot(ax, ay));
+  const ux = ax / aL, uy = ay / aL;
+
+  if (kind === 'gun') {
+    s += aRect(hx - 11, hy - 11, 22, 22, C_GUN, ' stroke="#0b0d10" stroke-width="2"');
+    s += aLine(hx, hy, hx + ux * 30, hy + uy * 30, C_BARREL, 9);
+  } else if (kind === 'tentacle') {
+    const len = o.tentLen === undefined ? 34 : o.tentLen;
+    for (let i = -1; i <= 1; i++) {
+      const sp = i * 0.34;
+      const vx = ux * Math.cos(sp) - uy * Math.sin(sp);
+      const vy = ux * Math.sin(sp) + uy * Math.cos(sp);
+      s += '<path d="M' + n1(hx) + ' ' + n1(hy) + ' Q ' + n1(hx + vx * len * 0.6 - vy * 6) +
+           ' ' + n1(hy + vy * len * 0.6 + vx * 6) + ' ' + n1(hx + vx * len) + ' ' +
+           n1(hy + vy * len) + '" fill="none" stroke="' + C_TENT + '" stroke-width="7"' +
+           ' stroke-linecap="round"/>';
+    }
+    s += '<circle cx="' + n1(hx + ux * len) + '" cy="' + n1(hy + uy * len) + '" r="4" fill="' +
+         C_TENT_TIP + '"/>';
+  } else {
+    s += aRect(hx - 13, hy - 12, 26, 24, C_ARM, ' rx="4" stroke="#0b0d10" stroke-width="2"');
+  }
+  return s;
+}
+
+/* ---------- マウス／キーの図（図の中で使うぶん） ---------- */
+function aMouse(x, y, k, hl) {
+  let s = '<rect x="' + n1(x - 15 * k) + '" y="' + n1(y - 22 * k) + '" width="' + n1(30 * k) +
+          '" height="' + n1(44 * k) + '" rx="' + n1(14 * k) +
+          '" fill="#1b2026" stroke="#5a636d" stroke-width="2"/>';
+  s += '<path d="M' + n1(x) + ' ' + n1(y - 22 * k) + ' V' + n1(y - 2 * k) +
+       '" stroke="#5a636d" stroke-width="2"/>';
+  if (hl === 'L') s += '<path d="M' + n1(x - 15 * k) + ' ' + n1(y - 8 * k) + ' V' + n1(y - 14 * k) +
+    ' a' + n1(14 * k) + ' ' + n1(14 * k) + ' 0 0 1 ' + n1(14 * k) + ' -' + n1(14 * k) +
+    ' V' + n1(y - 2 * k) + ' Z" fill="' + C_HI + '" opacity="0.85"/>';
+  if (hl === 'R') s += '<path d="M' + n1(x + 15 * k) + ' ' + n1(y - 8 * k) + ' V' + n1(y - 14 * k) +
+    ' a' + n1(14 * k) + ' ' + n1(14 * k) + ' 0 0 0 -' + n1(14 * k) + ' -' + n1(14 * k) +
+    ' V' + n1(y - 2 * k) + ' Z" fill="' + C_HI + '" opacity="0.85"/>';
+  return s;
+}
+function aKey(x, y, label, hl) {
+  const w = Math.max(26, 13 * label.length + 14);
+  return '<rect x="' + n1(x - w / 2) + '" y="' + n1(y - 13) + '" width="' + n1(w) +
+         '" height="26" rx="4" fill="' + (hl ? 'rgba(255,215,94,0.18)' : '#161a1f') +
+         '" stroke="' + (hl ? C_HI : '#5a636d') + '" stroke-width="2"/>' +
+         aText(x, y + 5, label, { size: 13, col: hl ? C_HI : 'rgba(215,220,210,0.9)' });
+}
+
+/* ---------- 頭モードの姿（丸い頭＋蜘蛛脚＋脊柱のしっぽ） ---------- */
+function aHeadForm(cx, cy, k) {
+  let s = '';
+  for (let i = 0; i < 4; i++) {
+    const sg = i < 2 ? -1 : 1, t = (i % 2) * 0.5;
+    s += '<path d="M' + n1(cx) + ' ' + n1(cy + 4 * k) + ' q ' + n1(sg * (16 + t * 8) * k) + ' ' +
+         n1(10 * k) + ' ' + n1(sg * (22 + t * 12) * k) + ' ' + n1(26 * k) +
+         '" fill="none" stroke="#b9b3a6" stroke-width="' + n1(3 * k) + '" stroke-linecap="round"/>';
+  }
+  s += '<path d="M' + n1(cx) + ' ' + n1(cy + 8 * k) + ' q ' + n1(-18 * k) + ' ' + n1(20 * k) +
+       ' ' + n1(-36 * k) + ' ' + n1(14 * k) + '" fill="none" stroke="#c9c3b4" stroke-width="' +
+       n1(4 * k) + '" stroke-linecap="round"/>';
+  s += '<circle cx="' + n1(cx) + '" cy="' + n1(cy) + '" r="' + n1(13 * k) + '" fill="#d9d4c8"/>';
+  return s;
+}
+
+/* =========================================================
+   ページ定義（1ページ＝1動作）
+   ========================================================= */
+const MANUAL_PAGES = [
+  /* --- 基本 --- */
+  {
+    cat: '基本', title: '移動',
+    keys: [['W A S D', '']],
+    desc: '前後左右に歩く。ライジング中とフィニッシャー中はその場に固定されて動けない。',
+    art: () => aStage(
+      aKey(180, 54, 'W', true) + aKey(146, 86, 'A', true) + aKey(180, 86, 'S', true) +
+      aKey(214, 86, 'D', true) +
+      aArrow(180, 150, 180, 120, C_HI, 3) + aArrow(180, 150, 180, 180, C_HI, 3) +
+      aArrow(180, 150, 134, 150, C_HI, 3) + aArrow(180, 150, 226, 150, C_HI, 3) +
+      '<circle cx="180" cy="150" r="9" fill="' + C_ARM + '"/>'),
+  },
+  {
+    cat: '基本', title: '視点',
+    keys: [['マウス', '']],
+    desc: 'マウスを動かすと視点が回る。画面中央のクロスヘアが、攻撃も触手も□選択も全部の基準になる。',
+    art: () => aStage(
+      aEnemy(255, 0.9, { op: 0.5 }) + aEnemy(95, 0.9, { op: 0.5 }) +
+      aCross(180, 96) +
+      aMouse(180, 162, 0.9) +
+      aArrow(205, 150, 243, 150, C_HI, 3) + aArrow(155, 150, 117, 150, C_HI, 3)),
+  },
+
+  /* --- 人間モード（拳） --- */
+  {
+    cat: '人間モード（拳）', title: '通常攻撃（パンチ）',
+    keys: [['左クリック', '短押し'], ['右クリック', '短押し']],
+    desc: '押した側の手で殴る。左クリック＝左手 / 右クリック＝右手。左右交互に押すと先行入力で繋がる。当てるたびに腕のHPが減る。',
+    art: () => aStage(
+      aEnemy(180, 1.05, {}) + aBurst(180, 96, 1.1) +
+      aArm('L', 'fist', 0.1) + aArm('R', 'fist', 1) +
+      aMouse(300, 52, 0.7, 'R')),
+  },
+  {
+    cat: '人間モード（拳）', title: '掴みフィニッシャー',
+    keys: [['左クリック', '短押し'], ['右クリック', '短押し']],
+    desc: '専用の入力はない。スタン中（STUNNED）の敵にパンチが当たると、殴った側の腕が自動で頭を掴んで握り潰す。この攻撃では腕のHPは減らない。',
+    art: () => aStage(
+      aEnemy(180, 1.05, { stun: true, headColor: '#9b8f7a' }) +
+      aArm('L', 'fist', 0.1) + aArm('R', 'fist', 1, { hx: 196, hy: 92 }) +
+      aArc(180, 96, 26, -2.4, 0.5, '#ff9c8c', 4)),
+  },
+  {
+    cat: '人間モード（拳）', title: 'パージ（手首射出）',
+    keys: [['左クリック', '長押し'], ['右クリック', '長押し']],
+    desc: '手首から先を弾として撃ち出す。各腕1回だけ。撃ったあとその腕は殴れなくなるので、棚か敵から腕を取り直す。',
+    art: () => aStage(
+      aEnemy(180, 0.95, { feet: 166 }) +
+      aArm('L', 'fist', 0.1) +
+      aArm('R', 'fist', 0.35, { hx: 232, hy: 150 }) +
+      aRect(196, 86, 20, 20, C_ARM, ' rx="4" stroke="#0b0d10" stroke-width="2"') +
+      aArrow(228, 136, 200, 100, C_COOL, 3) +
+      aText(258, 176, 'HOLD', { size: 12, col: C_HI })),
+  },
+  {
+    cat: '人間モード（拳）', title: 'キック',
+    keys: [['Space', '']],
+    desc: 'リソースを1消費する蹴り。敵の攻撃予備動作（WINDUP*）に合わせて出すとジャストキックになる。腕を使わないので、両腕を失っても出せる。',
+    art: () => aStage(
+      aEnemy(180, 1.0, {}) + aBurst(180, 120, 0.9) +
+      '<polygon points="200 216 240 206 212 128 186 136" fill="' + C_LEG +
+      '" stroke="#0b0d10" stroke-width="2"/>' +
+      aKey(300, 48, 'Space', true)),
+  },
+  {
+    cat: '人間モード（拳）', title: 'ドッジ',
+    keys: [['Shift', '']],
+    desc: 'リソースを1消費して入力方向へ回避する。移動キーを押していなければ後ろへ下がる。回避中は無敵。',
+    art: () => aStage(
+      aEnemy(180, 0.95, { feet: 164 }) +
+      '<circle cx="120" cy="160" r="10" fill="' + C_ARM + '" opacity="0.35"/>' +
+      '<circle cx="150" cy="158" r="10" fill="' + C_ARM + '" opacity="0.6"/>' +
+      '<circle cx="182" cy="156" r="10" fill="' + C_ARM + '"/>' +
+      aArrow(172, 182, 112, 182, C_COOL, 3) +
+      aKey(300, 48, 'Shift', true)),
+  },
+  {
+    cat: '人間モード（拳）', title: 'ジャストドッジ',
+    keys: [['Shift', 'WINDUP* に合わせて']],
+    desc: '敵のHUDが WINDUP* になった瞬間にドッジすると成立。リソースを消費せず逆に1回復し、短いスローがかかる。',
+    art: () => aStage(
+      aEnemy(180, 0.95, { feet: 164 }) +
+      aText(180, 48, 'WINDUP*', { size: 14, col: '#ffb45e' }) +
+      '<rect x="0" y="0" width="360" height="200" fill="' + C_COOL + '" opacity="0.07"/>' +
+      '<circle cx="182" cy="156" r="10" fill="' + C_ARM + '"/>' +
+      aArrow(172, 182, 112, 182, C_COOL, 3) +
+      aText(180, 192, 'JUST DODGE!', { size: 15, col: C_COOL })),
+  },
+
+  /* --- 銃腕 --- */
+  {
+    cat: '銃腕', title: '射撃',
+    keys: [['左クリック', '押した瞬間'], ['右クリック', '押した瞬間']],
+    desc: '押した側の銃腕から1発。パージはできない。1発撃つごとに腕のHPが減るので、撃ち続けると腕が落ちる。',
+    art: () => aStage(
+      aEnemy(180, 1.0, {}) + aBurst(180, 92, 0.8, '#ffd1a0') +
+      aArm('L', 'fist', 0.1) + aArm('R', 'gun', 0.5) +
+      aLine(178, 118, 180, 96, '#ffe9a0', 3) +
+      aMouse(300, 52, 0.7, 'R')),
+  },
+  {
+    cat: '銃腕', title: '連射',
+    keys: [['左クリック', '長押し'], ['右クリック', '長押し']],
+    desc: '押しているあいだ一定間隔で撃ち続ける。もう片方が拳なら、撃ちながら殴れる（銃腕は player.attack を占有しない）。',
+    art: () => aStage(
+      aEnemy(180, 1.0, {}) +
+      aArm('L', 'fist', 0.1) + aArm('R', 'gun', 0.5) +
+      aLine(178, 126, 180, 112, '#ffe9a0', 3) +
+      aLine(179, 104, 180, 90, '#ffe9a0', 3) +
+      aLine(180, 82, 180, 70, '#ffe9a0', 3) +
+      aText(300, 176, 'HOLD', { size: 12, col: C_HI }) +
+      aMouse(300, 52, 0.7, 'R')),
+  },
+
+  /* --- 触手腕 --- */
+  {
+    cat: '触手腕', title: '薙ぎ払い',
+    keys: [['左クリック', '短押し'], ['右クリック', '短押し']],
+    desc: '横に広い扇で範囲内の敵をまとめて薙ぐ。1段目と2段目で振る向きが反転する2コンボ。パンチより射程が長く、威力は半分以下。',
+    art: () => aStage(
+      aEnemy(118, 0.85, { feet: 168 }) + aEnemy(242, 0.85, { feet: 168 }) +
+      aArc(180, 170, 96, -2.75, -0.39, C_TENT_TIP, 5) +
+      aArrow(86, 92, 128, 74, C_TENT_TIP, 3) +
+      aArm('R', 'tentacle', 0.9, { hx: 206, hy: 128, aimX: 110, aimY: 110, tentLen: 48 })),
+  },
+  {
+    cat: '触手腕', title: '触手のフィニッシャー',
+    keys: [['左クリック', '短押し'], ['右クリック', '短押し']],
+    desc: '専用の入力はない。スタン中の敵に薙ぎ払いが当たると、頭に触手を刺して首から引き抜く。拳の掴みと違って敵を引き寄せないので、死体が離れた位置に落ちる。',
+    art: () => aStage(
+      aEnemy(210, 1.0, { headless: true, stun: true }) +
+      '<circle cx="128" cy="76" r="13" fill="' + C_HEAD + '"/>' +
+      '<path d="M206 96 Q 170 78 134 76" fill="none" stroke="' + C_TENT +
+      '" stroke-width="7" stroke-linecap="round"/>' +
+      aArrow(150, 60, 112, 52, C_TENT_TIP, 3) +
+      aArm('R', 'tentacle', 0.6, { hx: 232, hy: 134, aimX: 206, aimY: 100, tentLen: 26 })),
+  },
+  {
+    cat: '触手腕', title: '刺突（伸ばす）',
+    keys: [['左クリック', '長押し'], ['右クリック', '長押し']],
+    desc: 'クロスヘアの方向へ触手を伸ばす。当たった敵には刺さって拘束状態になり、敵のAIも押しのけも止まる。最大距離まで伸びて外れれば空振り。',
+    art: () => aStage(
+      aEnemy(180, 1.0, {}) +
+      '<path d="M258 196 Q 220 150 182 100" fill="none" stroke="' + C_TENT +
+      '" stroke-width="9" stroke-linecap="round"/>' +
+      '<circle cx="182" cy="100" r="6" fill="' + C_TENT_TIP + '"/>' +
+      aCross(180, 96) +
+      aText(300, 176, 'HOLD', { size: 12, col: C_HI })),
+  },
+  {
+    cat: '触手腕', title: '振り回す',
+    keys: [['マウス', '刺したまま大きく振る']],
+    desc: '刺さったまま視点を大きく振ると、敵が遅れて付いてきて振り回される。壁や床にぶつければダメージ。押しっぱなしのあいだ続く。',
+    art: () => aStage(
+      aArc(250, 176, 120, -2.9, -1.1, 'rgba(156,74,82,0.35)', 6) +
+      aEnemy(132, 0.8, { feet: 112 }) +
+      '<path d="M268 196 Q 210 150 146 90" fill="none" stroke="' + C_TENT +
+      '" stroke-width="8" stroke-linecap="round"/>' +
+      aArrow(228, 54, 150, 44, C_TENT_TIP, 3) +
+      aMouse(312, 150, 0.6) + aArrow(336, 128, 300, 112, C_HI, 3)),
+  },
+  {
+    cat: '触手腕', title: '投げる',
+    keys: [['左クリック', '離す'], ['右クリック', '離す']],
+    desc: '振り回している速度が十分なら、離した方向へ飛んでいく。着地や壁で速度に応じたダメージとスタン。速度が足りなければただ外れる。',
+    art: () => aStage(
+      aEnemy(272, 0.78, { feet: 96 }) +
+      '<path d="M120 150 Q 200 72 268 84" fill="none" stroke="rgba(255,215,94,0.35)"' +
+      ' stroke-width="3" stroke-dasharray="6 6"/>' +
+      aArrow(238, 72, 276, 70, C_HI, 3) +
+      '<path d="M96 196 Q 104 176 118 154" fill="none" stroke="' + C_TENT +
+      '" stroke-width="8" stroke-linecap="round"/>' +
+      aText(96, 142, 'RELEASE', { size: 12, col: C_HI })),
+  },
+  {
+    cat: '触手腕', title: '拘束したまま追撃（PINNED）',
+    keys: [['もう片方の腕', '']],
+    desc: '触手で刺して拘束している敵には、もう片方の腕の攻撃が全部通る。銃ならダメージ増（PINNED SHOT）、拳なら通常どおり（PINNED HIT）、触手の薙ぎ払いも通る（PINNED SWEEP）。',
+    art: () => aStage(
+      aEnemy(180, 1.0, {}) +
+      '<path d="M268 196 Q 226 150 186 102" fill="none" stroke="' + C_TENT +
+      '" stroke-width="8" stroke-linecap="round"/>' +
+      aArm('L', 'gun', 0.5, { hx: 96, hy: 136, aimX: 176, aimY: 100 }) +
+      aLine(140, 118, 172, 102, '#ffe9a0', 3) +
+      aBurst(180, 96, 0.8, '#ffd1a0') +
+      aText(180, 48, 'PINNED SHOT', { size: 13, col: C_HI })),
+  },
+  {
+    cat: '触手腕', title: 'BREAK（拘束のまま崩す）',
+    keys: [['左クリック', '静かに離す'], ['右クリック', '静かに離す']],
+    desc: '拘束中はのけぞらないがスタンだけ溜まり続ける。溜め切ってから振り回さずに静かに離すと、その場で崩れて（BREAK!）掴みフィニッシャーに繋がる。',
+    art: () => aStage(
+      aEnemy(180, 1.0, { stun: true }) +
+      '<path d="M268 196 Q 226 150 186 102" fill="none" stroke="' + C_TENT +
+      '" stroke-width="8" stroke-linecap="round" opacity="0.45"/>' +
+      aRect(120, 36, 120, 10, '#1b2026', ' stroke="#5a636d" stroke-width="1"') +
+      aRect(121, 37, 118, 8, '#ffd75e') +
+      aText(180, 190, 'BREAK!', { size: 16, col: C_HI })),
+  },
+
+  /* --- 腕の管理 --- */
+  {
+    cat: '腕の管理', title: '腕の耐久',
+    keys: [['—', '']],
+    desc: '腕ごとにHPがある。近接を当てるたび／銃を1発撃つたびに減り、0になると肉片になって消えてその側は何もできなくなる。奪った腕・棚の腕は必ずフルHP。',
+    art: () => aStage(
+      aText(96, 44, 'LEFT', { size: 13 }) + aText(264, 44, 'RIGHT', { size: 13 }) +
+      '<circle cx="96" cy="100" r="34" fill="none" stroke="#5a636d" stroke-width="6"/>' +
+      '<path d="M96 66 A 34 34 0 1 1 62 100" fill="none" stroke="#7fd08a" stroke-width="6"/>' +
+      aText(96, 106, '100', { size: 16, col: '#d8dcd4' }) +
+      '<circle cx="264" cy="100" r="34" fill="none" stroke="#5a636d" stroke-width="6"/>' +
+      '<path d="M264 66 A 34 34 0 0 1 294 84" fill="none" stroke="#cf4a44" stroke-width="6"/>' +
+      aText(264, 106, '18', { size: 16, col: '#cf4a44' }) +
+      aText(180, 178, '0 になった腕は落ちる', { size: 12 })),
+  },
+  {
+    cat: '腕の管理', title: '腕の切り替え（デバッグ）',
+    keys: [['1', '拳'], ['2', '銃'], ['3', '触手']],
+    desc: '検証用のショートカット。両腕をその場でまとめて差し替える（フルHP）。片腕だけ変えたいときは棚か敵から取る。',
+    art: () => aStage(
+      aKey(96, 60, '1', true) + aKey(180, 60, '2', true) + aKey(264, 60, '3', true) +
+      aRect(88, 100, 16, 56, C_ARM) + aRect(84, 92, 24, 14, C_ARM, ' rx="3"') +
+      aRect(172, 100, 16, 56, C_GUN) + aLine(180, 100, 180, 82, C_BARREL, 8) +
+      '<path d="M264 156 V112" stroke="' + C_TENT + '" stroke-width="16" stroke-linecap="round"/>' +
+      '<path d="M264 112 q -10 -14 -16 -24 M264 112 q 2 -18 0 -28 M264 112 q 12 -12 18 -22"' +
+      ' fill="none" stroke="' + C_TENT_TIP + '" stroke-width="5" stroke-linecap="round"/>' +
+      aText(96, 182, 'FIST', { size: 12 }) + aText(180, 182, 'GUN', { size: 12 }) +
+      aText(264, 182, 'TENTACLE', { size: 12 })),
+  },
+  {
+    cat: '腕の管理', title: '腕の棚（ARM RACK）',
+    keys: [['Q', '長押し'], ['左/右クリック', '□に合わせて']],
+    desc: 'リスポーン地点の正面にある棚。ライジング中に□へクロスヘアを合わせてクリックすると、その腕がフルHPで付く。何度取っても棚から減らない。',
+    art: () => aStage(
+      aRect(60, 128, 240, 10, '#3b4149') + aRect(70, 60, 220, 68, '#272c33') +
+      aText(180, 50, 'ARM RACK', { size: 14, col: C_HI }) +
+      aRect(112, 86, 12, 42, C_ARM) + aRect(108, 78, 20, 12, C_ARM, ' rx="3"') +
+      aRect(174, 86, 12, 42, C_GUN) + aLine(180, 86, 180, 70, C_BARREL, 7) +
+      '<path d="M242 128 V96" stroke="' + C_TENT + '" stroke-width="12" stroke-linecap="round"/>' +
+      '<path d="M242 96 q -10 -14 -17 -22 M242 96 q 2 -16 0 -26 M242 96 q 12 -12 18 -20"' +
+      ' fill="none" stroke="' + C_TENT_TIP + '" stroke-width="5" stroke-linecap="round"/>' +
+      aSquare(118, 98, 34, 'rgba(150,230,170,0.95)') + aCross(118, 98) +
+      aText(180, 182, '取っても消えない', { size: 12, col: C_HI })),
+  },
+
+  /* --- ライジング --- */
+  {
+    cat: 'ライジング', title: 'ライジング',
+    keys: [['Q', '長押し']],
+    desc: '押しているあいだだけ脊柱が伸びてワールドがスローになる。いつでも出せるが、その場から動けない。離すとゴムのように縮んで人間モードへ戻る。',
+    art: () => aStage(
+      '<rect width="360" height="200" fill="#2c5a68" opacity="0.14"/>' +
+      aRect(169, 166, 22, 30, C_LEG) +
+      aRect(160, 130, 40, 38, '#4e5560') +
+      aRect(147, 132, 10, 32, C_ARM) + aRect(203, 132, 10, 32, C_ARM) +
+      '<path d="M180 130 V92" stroke="#c9c3b4" stroke-width="7"/>' +
+      aHeadForm(180, 80, 1.0) +
+      aText(300, 44, 'SLOW', { size: 14, col: C_COOL }) +
+      aKey(60, 44, 'Q', true) + aText(60, 72, 'HOLD', { size: 11, col: C_HI })),
+  },
+  {
+    cat: 'ライジング', title: '腕を奪う',
+    keys: [['左クリック', '→ 左手に付く'], ['右クリック', '→ 右手に付く']],
+    desc: 'スタン中の敵の腕・死体の腕・床に落ちた腕・棚の腕、すべて□にクロスヘアを合わせてクリック。押したボタンの側に付く（敵と対面すると左右が鏡になるため）。この斬撃で敵のHPは減らない。',
+    art: () => aStage(
+      aEnemy(180, 1.05, { stun: true }) +
+      aSquare(146, 108, 32) + aSquare(214, 108, 32) +
+      aCross(214, 108) +
+      aLine(196, 72, 236, 140, '#fff0b0', 4) +
+      aMouse(312, 150, 0.6, 'R')),
+  },
+  {
+    cat: 'ライジング', title: '死体を乗っ取る',
+    keys: [['F', '□が死体の首元のとき']],
+    desc: '死体の首元に出る青い□に合わせてFを押すと、首が飛んで脊柱を突き刺し、その体で人間モードになる。死体の腕はそのまま自分の腕になる。',
+    art: () => aStage(
+      aCorpse(180, 1.1) +
+      aSquare(180, 128, 32, '#b8e8ff') +
+      '<path d="M90 60 Q 140 60 176 118" fill="none" stroke="rgba(184,232,255,0.5)"' +
+      ' stroke-width="3" stroke-dasharray="6 6"/>' +
+      aHeadForm(90, 60, 0.85) +
+      aKey(300, 48, 'F', true)),
+  },
+  {
+    cat: 'ライジング', title: '頭モードへ',
+    keys: [['Space', '']],
+    desc: 'ライジング中にSpaceで脊柱から下を切り離す。残した体はその場に死体として残るので、あとから自分で乗っ取り直せる。',
+    art: () => aStage(
+      aCorpse(120, 1.0) +
+      aHeadForm(252, 86, 1.0) +
+      aArrow(166, 96, 220, 86, C_HI, 3) +
+      aKey(60, 44, 'Space', true)),
+  },
+
+  /* --- 頭モード --- */
+  {
+    cat: '頭モード', title: '移動とジャンプ',
+    keys: [['W A S D', '移動'], ['Space', 'ジャンプ']],
+    desc: '三人称。丸い頭に蜘蛛脚と脊柱のしっぽが付いた状態で歩き回る。攻撃はできない。',
+    art: () => aStage(
+      '<path d="M70 168 Q 150 92 240 150" fill="none" stroke="rgba(255,215,94,0.3)"' +
+      ' stroke-width="3" stroke-dasharray="6 6"/>' +
+      aHeadForm(150, 102, 1.0) +
+      aKey(296, 48, 'Space', true) + aKey(296, 86, 'WASD', true)),
+  },
+  {
+    cat: '頭モード', title: '死体に乗り移る',
+    keys: [['F', '死体に近づいて']],
+    desc: '近くの死体にFで乗り移ると、その体で人間モードに戻る。死体が持っている腕がそのまま自分の腕になる。',
+    art: () => aStage(
+      aCorpse(220, 1.1) +
+      aHeadForm(120, 140, 0.9) +
+      aArrow(148, 128, 198, 112, C_HI, 3) +
+      aText(220, 56, '[F] TAKE BODY', { size: 13, col: C_HI })),
+  },
+
+  /* --- デバッグ --- */
+  {
+    cat: 'デバッグ', title: 'ボス戦へワープ',
+    keys: [['B', '']],
+    desc: 'ダクトの男（DUCT MAN）のアリーナへ飛ぶ。3ラウンドのかくれんぼ。',
+    art: () => aStage(
+      '<rect width="360" height="200" fill="#120a0a" opacity="0.6"/>' +
+      aEnemy(180, 1.25, { armColor: '#7a2f2a', headColor: '#6a5f70', op: 0.85 }) +
+      aText(180, 44, 'DUCT MAN', { size: 15, col: '#ff8f7a' }) +
+      aKey(56, 44, 'B', true)),
+  },
+  {
+    cat: 'デバッグ', title: 'デモステージへ',
+    keys: [['V', '']],
+    desc: '一本道の廊下で5ウェーブ戦う。全滅させないと奥の門（赤い壁）が開かない。Gでリセットするとハブへ戻る。',
+    art: () => aStage(
+      aLine(104, 60, 104, 200, '#3b4149', 4) + aLine(256, 60, 256, 200, '#3b4149', 4) +
+      aRect(104, 56, 152, 12, '#8e2f2a') +
+      aEnemy(146, 0.62, { feet: 136 }) + aEnemy(212, 0.62, { feet: 136 }) +
+      aText(180, 188, 'WAVE 1 / 5', { size: 13, col: C_HI }) +
+      aKey(56, 44, 'V', true)),
+  },
+  {
+    cat: 'デバッグ', title: 'リセット',
+    keys: [['G', '']],
+    desc: 'プレイヤー・敵・死体・落ちた腕を初期状態に戻し、リスポーン地点へ帰る。デモ中なら抜けてハブへ戻る。',
+    art: () => aStage(
+      '<path d="M180 70 A 42 42 0 1 1 143.6 91" fill="none" stroke="' + C_HI +
+      '" stroke-width="5" stroke-linecap="round"/>' +
+      '<polygon points="198 70 174 60 174 80" fill="' + C_HI + '"/>' +
+      aText(180, 182, 'RESET', { size: 15, col: C_HI }) +
+      aKey(56, 44, 'G', true)),
+  },
+];
+
+/* =========================================================
+   マニュアルの開閉とページ送り
+   ========================================================= */
+let manualOpen = false;
+let manualIdx = 0;
+
+const mu = {
+  root: document.getElementById('manual'),
+  cat: document.getElementById('manualCat'),
+  count: document.getElementById('manualCount'),
+  art: document.getElementById('manualArt'),
+  title: document.getElementById('manualTitle'),
+  keys: document.getElementById('manualKeys'),
+  desc: document.getElementById('manualDesc'),
+  dots: document.getElementById('manualDots'),
+};
+
+function renderManual() {
+  const p = MANUAL_PAGES[manualIdx];
+  mu.cat.textContent = p.cat;
+  mu.count.textContent = (manualIdx + 1) + ' / ' + MANUAL_PAGES.length;
+  mu.art.innerHTML = '<svg viewBox="0 0 ' + ART.W + ' ' + ART.H + '" preserveAspectRatio="xMidYMid meet">' +
+                     p.art() + '</svg>';
+  mu.title.textContent = p.title;
+  mu.keys.innerHTML = p.keys.map(
+    (k) => '<span class="mk">' + k[0] + '</span>' + (k[1] ? '<span class="mm">' + k[1] + '</span>' : '')
+  ).join('<span class="msep">/</span>');
+  mu.desc.textContent = p.desc;
+  // ページ位置。カテゴリの切れ目で間を空けて「章」が見えるようにする
+  let dots = '';
+  for (let i = 0; i < MANUAL_PAGES.length; i++) {
+    const gap = i > 0 && MANUAL_PAGES[i].cat !== MANUAL_PAGES[i - 1].cat;
+    dots += '<i class="' + (i === manualIdx ? 'on' : '') + (gap ? ' gap' : '') + '"></i>';
+  }
+  mu.dots.innerHTML = dots;
+}
+
+function openManual() {
+  manualOpen = true;
+  // 開く前に握っていたキーを落とす。閉じた瞬間に歩き出さないように
+  for (const k of Object.keys(keys)) keys[k] = false;
+  mouseHold.LEFT = null; mouseHold.RIGHT = null;
+  gunHold.LEFT = false; gunHold.RIGHT = false;
+  signPrompt.classList.add('hidden');
+  document.body.classList.add('manual-on');   // クロスヘアと腕HUDを引っ込める
+  renderManual();
+  mu.root.classList.remove('hidden');
+}
+
+function closeManual() {
+  manualOpen = false;
+  document.body.classList.remove('manual-on');
+  mu.root.classList.add('hidden');
+}
+
+function manualTurn(d) {
+  manualIdx = (manualIdx + d + MANUAL_PAGES.length) % MANUAL_PAGES.length;
+  renderManual();
+}
+
+/* =========================================================
+   腕の棚（ARM RACK）と操作説明の看板
+
+   リスポーン地点 (0, 6) の正面、ROOM1 と ROOM2 のあいだの通路に置いてある。
+   棚に並んだ腕はライジングの□＋クリックで何度でも取れる（取っても棚から減らない）。
+   敵を倒して腕を奪わなくても、腕ごとの手触りをその場で比べられるようにするための
+   デバッグ用の設備。
+
+   看板はFでインタラクトすると操作説明（1ページ1動作）が開く。
+   ========================================================= */
+
+const RACK = {
+  x: 0, z: 1.2,            // 棚の中心。プレイヤーは (0, 6) に -Z を向いて出るので正面に見える
+  slotGap: 1.30,           // 腕と腕の間隔(m)
+  boardY: 1.15,            // 腕を載せる棚板の高さ(m)
+  range: 9.0,              // □が出る距離(m)。risingInteractRange(7.0)より少し広くとってある
+  signX: 3.6,              // 看板は棚の右どなり
+  signRange: 3.8,          // 看板に[F]が出る距離(m)
+  slots: [],               // { kind, group, world, el, pulse }
+  signWorld: new THREE.Vector3(),
+};
+
+const ARM_LABEL = { fist: 'FIST  [1]', gun: 'GUN  [2]', tentacle: 'TENTACLE  [3]' };
+
+/* ---------- 文字を貼った板（部屋名と同じ CanvasTexture 方式）---------- */
+function makeTextPlane(lines, w, h, opts) {
+  const o = opts || {};
+  const cv = document.createElement('canvas');
+  cv.width = 512; cv.height = Math.max(32, Math.round(512 * h / w));
+  const ctx = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv);
+  if (ctx) {
+    if (o.bg) { ctx.fillStyle = o.bg; ctx.fillRect(0, 0, cv.width, cv.height); }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < lines.length; i++) {
+      const L = lines[i];
+      ctx.font = (L.size || 54) + 'px sans-serif';
+      ctx.fillStyle = L.color || 'rgba(205,210,200,0.85)';
+      ctx.fillText(L.text, cv.width / 2, cv.height * ((i + 0.5) / lines.length));
+    }
+    tex.needsUpdate = true;
+  }
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+}
+
+/* ---------- 棚に飾る腕 ----------
+   手首が上を向いた状態で立てて置く。床に落ちている腕（ejectOldArm）と
+   同じ色・同じ太さにしてあるので、棚の腕と拾う腕が同じものだと分かる      */
+function buildRackArm(kind) {
+  const g = new THREE.Group();
+  const col = (kind === ARM.GUN) ? COLOR_GUN_ARM
+            : (kind === ARM.TENTACLE) ? COLOR_TENTACLE : COLOR_PLAYER_ARM;
+  const fore = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.74, 0.15),
+    new THREE.MeshLambertMaterial({ color: col }));
+  fore.position.y = 0.37;
+  g.add(fore);
+
+  if (kind === ARM.GUN) {
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.055, 0.32, 8),
+      new THREE.MeshLambertMaterial({ color: COLOR_GUN_BARREL }));
+    barrel.position.y = 0.88;
+    g.add(barrel);
+  } else if (kind === ARM.TENTACLE) {
+    // 手首から先の3本。棚の上では軽く開いて垂れている
+    for (let s = 0; s < 3; s++) {
+      const a = s * Math.PI * 2 / 3;
+      for (let k = 0; k < 6; k++) {
+        const t = (k + 1) / 6;
+        const m = new THREE.Mesh(
+          new THREE.SphereGeometry(0.05 * (1 - t * 0.5), 7, 5),
+          new THREE.MeshLambertMaterial({
+            color: new THREE.Color(COLOR_TENTACLE).lerp(new THREE.Color(COLOR_TENTACLE_TIP), t) }));
+        m.position.set(Math.cos(a) * t * 0.17,
+                       0.76 + t * 0.26 - t * t * 0.20,
+                       Math.sin(a) * t * 0.17);
+        g.add(m);
+      }
+    }
+  } else {
+    const fist = new THREE.Mesh(
+      new THREE.BoxGeometry(0.21, 0.19, 0.21),
+      new THREE.MeshLambertMaterial({ color: COLOR_PLAYER_ARM }));
+    fist.position.y = 0.83;
+    g.add(fist);
+  }
+  g.userData.kind = kind;
+  return g;
+}
+
+/* ---------- 棚と看板を建てる ---------- */
+const rackGroup = new THREE.Group();
+scene.add(rackGroup);
+
+{
+  const woodMat = new THREE.MeshLambertMaterial({ color: 0x3b4149 });
+  const darkMat = new THREE.MeshLambertMaterial({ color: 0x272c33 });
+  const kinds = [ARM.FIST, ARM.GUN, ARM.TENTACLE];
+  const W = RACK.slotGap * kinds.length + 0.5;
+
+  const back = new THREE.Mesh(new THREE.BoxGeometry(W, 2.70, 0.10), darkMat);
+  back.position.set(RACK.x, 1.35, RACK.z - 0.32);
+  rackGroup.add(back);
+
+  const board = new THREE.Mesh(new THREE.BoxGeometry(W, 0.10, 0.60), woodMat);
+  board.position.set(RACK.x, RACK.boardY, RACK.z);
+  rackGroup.add(board);
+
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, RACK.boardY, 0.12), woodMat);
+    leg.position.set(RACK.x + sx * (W / 2 - 0.12), RACK.boardY / 2, RACK.z);
+    rackGroup.add(leg);
+  }
+
+  const title = makeTextPlane([{ text: 'ARM RACK', size: 62, color: 'rgba(255,215,94,0.85)' }],
+                              2.4, 0.45);
+  title.position.set(RACK.x, 2.42, RACK.z - 0.26);
+  rackGroup.add(title);
+
+  for (let i = 0; i < kinds.length; i++) {
+    const kind = kinds[i];
+    const x = RACK.x + (i - (kinds.length - 1) / 2) * RACK.slotGap;
+
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.07, 0.40), darkMat);
+    pad.position.set(x, RACK.boardY + 0.08, RACK.z);
+    rackGroup.add(pad);
+
+    const arm = buildRackArm(kind);
+    arm.position.set(x, RACK.boardY + 0.11, RACK.z);
+    rackGroup.add(arm);
+
+    const label = makeTextPlane([{ text: ARM_LABEL[kind], size: 46 }], 1.15, 0.26);
+    label.position.set(x, RACK.boardY - 0.16, RACK.z + 0.32);
+    rackGroup.add(label);
+
+    const el = document.createElement('div');
+    el.className = 'shoulder-target rack hidden';
+    document.body.appendChild(el);
+
+    RACK.slots.push({
+      kind, group: arm, el, pulse: 0,
+      world: new THREE.Vector3(x, RACK.boardY + 0.55, RACK.z),
+    });
+  }
+
+  // --- 操作説明の看板（棚の右どなり）---
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.45, 0.12), woodMat);
+  post.position.set(RACK.signX, 0.72, RACK.z);
+  rackGroup.add(post);
+
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(1.70, 1.00, 0.08), darkMat);
+  panel.position.set(RACK.signX, 1.88, RACK.z);
+  rackGroup.add(panel);
+
+  const face = makeTextPlane([
+    { text: '操作説明', size: 86, color: 'rgba(255,233,138,0.95)' },
+    { text: 'MANUAL   [ F ]', size: 42, color: 'rgba(200,205,195,0.7)' },
+  ], 1.60, 0.92);
+  face.position.set(RACK.signX, 1.88, RACK.z + 0.05);
+  rackGroup.add(face);
+
+  RACK.signWorld.set(RACK.signX, 2.18, RACK.z + 0.05);
+}
+
+// 看板の[F]プロンプト（死体の胸元と同じ見た目）
+const signPrompt = document.createElement('div');
+signPrompt.className = 'chest-prompt hidden';
+signPrompt.innerHTML = '<span class="key">F</span><span>操作説明</span>';
+document.body.appendChild(signPrompt);
+
+function signInRange() {
+  if (DEMO.active) return false;
+  // 看板は頭より高い位置にあるので、3D距離だと真下に立っても遠く出る。水平距離で見る
+  return Math.hypot(playerPos.x - RACK.signWorld.x, playerPos.z - RACK.signWorld.z) <= RACK.signRange;
+}
+
+/* ---------- 棚から腕を取る ----------
+   見本は棚に残したまま、グラフト演出用の使い捨てメッシュだけを飛ばす。
+   付き方も付く側（押したボタンの側）も、敵の腕・床の腕とまったく同じ扱い   */
+function takeRackArm(t, side) {
+  const sl = t.slot;
+  const ghost = buildRackArm(sl.kind);
+  ghost.position.copy(sl.world);
+  scene.add(ghost);
+  selectedTarget = null;
+  startArmGraft(ghost, side, sl.world.clone(), makeArmState(sl.kind));
+  sl.pulse = 1;                     // 見本が一度膨らむ。「まだ在庫がある」ことの合図
+  addHitstop(0.10);
+  addShake(0.20);
+  doFlash(0.20, '#ffd0b0');
+  showFeedback('RACK ' + side[0] + '  ' + sl.kind.toUpperCase(), '#ffd75e', 30);
+}
+
+/* ---------- 毎フレーム ---------- */
+function updateRack(rdt) {
+  for (const sl of RACK.slots) {
+    sl.group.rotation.y += rdt * 0.6;          // ゆっくり回して形が見えるようにする
+    if (sl.pulse > 0) {
+      sl.pulse = Math.max(0, sl.pulse - rdt * 2.6);
+      sl.group.scale.setScalar(1 + Math.sin(sl.pulse * Math.PI) * 0.22);
+    } else sl.group.scale.setScalar(1);
+  }
+
+  // 看板の[F]。人間モードと頭モードのときだけ出す
+  const show = !manualOpen && signInRange() && (state === S.HUMAN || state === S.HEAD);
+  if (!show) { signPrompt.classList.add('hidden'); return; }
+  const scr = projectToScreen(RACK.signWorld);
+  if (!scr.front) { signPrompt.classList.add('hidden'); return; }
+  signPrompt.classList.remove('hidden');
+  signPrompt.style.left = scr.x + 'px';
+  signPrompt.style.top = scr.y + 'px';
+}
+
+/* =========================================================
    メインループ
    ========================================================= */
 updateArmVisuals();
@@ -6094,6 +6956,7 @@ function animate() {
   updateTargets();
   updateEnemyUi();
   updateCorpseUi();
+  updateRack(rdt);
 
   const risingActive = inRising && risingBlend > 0.25;
   ui.slowOverlay.classList.toggle('hidden', !(risingActive || slowTimer > 0));
@@ -6131,6 +6994,7 @@ function animate() {
     ? (selectedTarget.kind === 'corpse' ? 'CORPSE'
        : selectedTarget.kind === 'corpseArm' ? 'CORPSE ' + selectedTarget.key
        : selectedTarget.kind === 'groundArm' ? 'GROUND ARM ' + selectedTarget.part.key
+       : selectedTarget.kind === 'rackArm' ? 'RACK ' + selectedTarget.slot.kind.toUpperCase()
        : selectedTarget.entry.key) : 'NONE';
   const room = currentRoom();
   ui.room.textContent = DEMO.active

@@ -69,13 +69,22 @@
   </div>
 </div>
 
-<!-- 操作ヒント -->
-<div id="hint">
-  <b>人間</b> L/R Click パンチ&nbsp;&nbsp;長押し パージ&nbsp;&nbsp;Space キック&nbsp;&nbsp;Shift ドッジ&nbsp;&nbsp;G リセット&nbsp;&nbsp;<b>銃腕</b> Click 射撃 / 長押し 連射&nbsp;&nbsp;腕はヒット/射撃ごとに削れる<br>
-  <b>腕の切り替え 1=拳 / 2=銃 / 3=触手</b>&nbsp;&nbsp;<b>触手腕</b> 短押し 左右2コンボの薙ぎ払い（中距離・低威力・横に広い）&nbsp;&nbsp;長押し 前方へ伸ばして刺す → 刺したままマウスを大きく振ると敵を振り回せる → 離すとその方向へ投げる<br>
-  <b>腕の組み合わせ</b> 触手で拘束した敵には、もう片方の腕のダメージが通る（銃＝PINNED SHOT・ダメージ1.6倍 / 拳＝PINNED HIT / 触手の薙ぎ払い＝PINNED SWEEP）&nbsp;&nbsp;拘束中は崩れないがスタンは溜まり、溜め切って静かに離すとその場で崩れる（BREAK!）<br>
-  <b>Q 長押し = ライジング</b>&nbsp;&nbsp;その場に固定&nbsp;&nbsp;□に合わせて 左/右クリック ＝ 腕を取る（敵・死体・床に落ちた腕すべて共通／左クリック＝左手・右クリック＝右手に付く） / F 死体に乗っ取る&nbsp;&nbsp;Space 頭モードへ<br>
-  <b>頭モード</b> WASD 移動&nbsp;&nbsp;Space ジャンプ&nbsp;&nbsp;F 死体に乗っ取る&nbsp;&nbsp;<b>B ボス戦（ダクトの男）へ</b>&nbsp;&nbsp;<b>V デモステージ（一本道のウェーブ戦）へ</b>
+<!-- 操作説明（腕の棚の横の看板をFでインタラクト）-->
+<div id="manual" class="hidden">
+  <div class="manual-side left"><span class="mkey">A</span><span class="marrow">&#9664;</span><span class="mcap">前</span></div>
+  <div class="manual-box">
+    <div class="manual-head">
+      <span id="manualCat">CATEGORY</span>
+      <span id="manualCount">1 / 1</span>
+    </div>
+    <div id="manualArt"></div>
+    <div id="manualTitle">TITLE</div>
+    <div id="manualKeys"></div>
+    <div id="manualDesc"></div>
+    <div id="manualDots"></div>
+    <div class="manual-foot"><span class="mkey">F</span> 閉じる</div>
+  </div>
+  <div class="manual-side right"><span class="mcap">次</span><span class="marrow">&#9654;</span><span class="mkey">D</span></div>
 </div>
 
 <!-- スタート／ポーズオーバーレイ -->
