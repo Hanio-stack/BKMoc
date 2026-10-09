@@ -8,6 +8,9 @@
      L/R Click 長押し パージ（手首射出・各腕1回のみ）
      Space            キック（リソース1／ジャストキック）
      Shift            ドッジ（ジャストドッジは消費なし＋1回復）
+     Ctrl 長押し      ガード（腕を斜めに構える。受けるダメージは半減して腕が受ける）
+                      ※開始のクリックで全画面になり、Ctrl+W などのブラウザの
+                        ショートカットはゲームが受け取る（Chrome / Edge）
      ※全アクション（パンチ・パージ・キック・ドッジ・ライジング）は
        進行中のアクションをキャンセルして出せる。
        キャンセルできるのは近接の「振り抜き（アニメーションの攻撃終わり）」以降。
@@ -19,6 +22,7 @@
        キックとドッジは「押した瞬間」でジャストを判定する設計なので、
        あとから出ると判定がずれる。先行入力の対象にしていない。
      Q 長押し        ライジング（いつでも可）
+     Z                体スキル（体ごとに1回だけ。下の「体スキル」参照）
      F                落ちている/浮いている腕と交換
      G                リセット
 
@@ -99,6 +103,25 @@
      乗っ取ると脊柱を首元に突き刺して装着し、その体で人間モードになる
      ライジング中は死体の腕にも□が出て、スタン中の敵と同じように斬って奪える
      （こちらも左クリックなら左手、右クリックなら右手に付く）
+
+   ダメージの受け方:
+     人間モードで敵から受けるダメージは体（中央）だけに入る。
+     腕のHPが減るのは自分で攻撃したとき（近接のヒット・射撃・触手）だけ。
+     ガード中（Ctrl）は受けるダメージを guardDamageMul 倍にして、残っている腕
+     それぞれに入れる（両腕あれば両方に同じ量）。体には入らない。
+     両腕とも無ければガードにならず、普通に体へ入る。
+     ガード中は攻撃・キックは出せない。ドッジは出せる（構えを解いて避ける）。
+
+   体スキル（BODY SKILL・Z）:
+     体ごとに1回だけ使えるスキルが付いている。使うとその体ではもう使えない（使い捨て）。
+     使えるときは中央の体アイコンの縁が光り、アイコンの絵がスキルの種類を表す。
+     死体を乗っ取るとその体のスキルが手に入る（本番は死体ごとに設定。モックはランダム）。
+     自分が捨てた体は使用済みかどうかも含めてそのまま残る。
+       阿修羅（ASURA） 3時・2時／9時・10時の位置に腕が2本ずつ生えて6本腕になる。
+                       左右のクリックで攻撃すると、同じ側の追加の腕も少し遅れて同じ攻撃を出す。
+                       追加の腕は生えたときの腕の種類をコピーし、以後ライジングで腕を
+                       交換しても変わらない。耐久は腕ごとに減るが、HUDには出さない。
+       回復（HEAL）    緑のエフェクトとともに体のHPを全回復する。
 
    部屋（ROOMS）:
      敵は自分の部屋にプレイヤーがいる間だけ追う。出れば追うのをやめて
@@ -475,6 +498,11 @@ const CONFIG = {
                                //   これ以上伸ばすと、押していないパンチが
                                //   ドッジやフィニッシャーのあとに漏れて出る
 
+  /* --- ガード（Ctrl長押し）--- */
+  guardDamageMul: 0.5,         // ガード中に受けるダメージの倍率。これが残っている腕それぞれに入る
+  guardRaiseTime: 0.10,        // 構えるまで(s)。押した瞬間からガードは効く（見た目だけの補間）
+  guardMoveMul: 0.5,           // ガード中の移動速度の倍率
+
   /* --- キック / ドッジ --- */
   resourceMax: 3,
   resourceRegenTime: 3.0,
@@ -543,6 +571,18 @@ const CONFIG = {
   bossHideCorpses: 22,           // かくれんぼ部屋に置く死体
   bossBurstKeep: 3,              // ラウンド開始時に残す死体（腕と体の補給を絞る）
   bossBurstInterval: 0.055,      // 死体が連鎖爆散する間隔(s)
+
+  /* --- 体スキル（Zで発動・体ごとに1回）--- */
+  asuraGrowTime: 0.55,         // 追加の腕が生えきるまで(s)
+  asuraGrowStagger: 0.10,      // 腕ごとに生えはじめをずらす(s)。4本が順ににょきにょき出る
+  asuraFollowDelay: 0.07,      // 本体の腕が攻撃してから追加の腕が続くまでの間隔(s)。
+                               // 3時(9時)がこの値、2時(10時)がこの倍で出る
+  asuraAimDist: 2.2,           // 追加の腕の手先が向く点（カメラの前方この距離の画面中央）(m)。
+                               // 近いほど内向きに寝て、画面の真ん中を塞ぐ
+  asuraArmScale: 0.8,          // 追加の腕の太さと長さ（本体の腕に対する倍率）。視界を塞ぎすぎないように
+  asuraDamageMul: 1.0,         // 追加の腕の攻撃のダメージ／スタン倍率（本体の腕の何倍か）
+  asuraHitstop: 0.035,         // 追加の腕のヒットストップ。本体(0.07)の半分＝連打のテンポを殺さない
+  healFxTime: 1.3,             // 回復エフェクトの長さ(s)
 
   /* --- 演出 --- */
   hitstopNormal: 0.07,
@@ -688,6 +728,17 @@ function makeArmState(kind, opts) {
 }
 function cloneArmState(a) { return Object.assign({}, a); }
 
+/* ---------- 体スキル ----------
+   体ごとに1回だけ使えるスキル。kind: 種類 / used: 使用済み。
+   死体（createCorpse）とプレイヤーの体が1つずつ持ち、乗っ取ると体ごと入れ替わる。
+   本番では死体ごとに設定する想定。モックではランダムに割り当てる              */
+const SKILL = { ASURA: 'asura', HEAL: 'heal' };
+const SKILL_LIST = [SKILL.ASURA, SKILL.HEAL];
+const SKILL_LABEL = { asura: 'ASURA', heal: 'HEAL' };
+function makeBodySkill(kind) {
+  return { kind: kind || SKILL_LIST[Math.floor(Math.random() * SKILL_LIST.length)], used: false };
+}
+
 /* ---------- プレイヤー ---------- */
 const playerPos = new THREE.Vector3(0, 0, 6);
 let yaw = 0, pitch = 0;
@@ -697,6 +748,7 @@ const player = {
   resource: CONFIG.resourceMax,
   resourceCharge: 0,
   arms: { LEFT: makeArmState(ARM.FIST), RIGHT: makeArmState(ARM.FIST) },
+  skill: makeBodySkill(),             // 今の体の体スキル
   gunRecoil: { LEFT: 0, RIGHT: 0 },   // 一人称の銃腕の反動(0-1)
   attack: null,
   recoverT: 0,
@@ -704,6 +756,7 @@ const player = {
   dodgeDir: new THREE.Vector3(),
   invuln: 0,
   stagger: 0,          // ボスのキックで潰されている時間。canCancelNow() が見る
+  guard: false,        // ガード中（Ctrl長押し）。updateGuard() が毎フレーム決める
 };
 
 const playerGroup = new THREE.Group();
@@ -988,6 +1041,8 @@ const CORPSE_SPOTS = [[-3, 2, 0.8], [3, 1, -1.2], [-1, 10, 2.4]];   // どの部
 //   arms: { LEFT: armState|null, RIGHT: armState|null } 乗っ取ったときに自分の腕になる。
 //         null は欠けている（斬って奪った腕）。省略時はフルHPの拳
 //   fuse: 爆発までの秒数（ワールド時間）。null なら爆発しない
+//   skill: 体スキル { kind, used }。省略時はランダム（自分が捨てた体は使用済みかも引き継ぐ）
+//   extraArms: 阿修羅の追加の腕（自分が捨てた体だけ）。乗っ取り直すと生え直す
 function createCorpse(x, z, rotY, opts) {
   opts = opts || {};
   const enemyStyle = !!opts.enemyStyle;
@@ -1070,9 +1125,12 @@ function createCorpse(x, z, rotY, opts) {
     document.body.appendChild(ae);
     armEls[key] = ae;
   }
+  const skill = opts.skill ? Object.assign({}, opts.skill) : makeBodySkill();
   const prompt = document.createElement('div');
   prompt.className = 'chest-prompt hidden';
-  prompt.innerHTML = '<span class="key">F</span><span>TAKE BODY</span>';
+  // 体スキルの種類も出す。どの体を取るかを選ぶ材料になる
+  prompt.innerHTML = '<span class="key">F</span><span>TAKE BODY</span>' +
+    '<span class="skill-tag' + (skill.used ? ' used' : '') + '">' + SKILL_LABEL[skill.kind] + '</span>';
   document.body.appendChild(prompt);
 
   // 爆発が近いことを体ぜんぶで示すため、死体のマテリアルを集めておく。
@@ -1091,6 +1149,8 @@ function createCorpse(x, z, rotY, opts) {
     // hp が数値なら「中古の体」。乗っ取ってもこのHPまでしか戻らない。
     // 敵の死体や最初から置いてある体は null ＝ 全快の新品
     hp: (typeof opts.hp === 'number') ? opts.hp : null,
+    skill,
+    extraArms: opts.extraArms || null,
     blinkPhase: 0,
   };
   corpses.push(c);
@@ -1173,8 +1233,7 @@ function explodeCorpse(c) {
   if (dp <= r) {
     if (player.invuln > 0) {
       if (!inFinisher()) showFeedback('DODGE', '#9ce8ff', 24);
-    } else {
-      player.hp = Math.max(0, player.hp - CONFIG.corpseBurstDamagePlayer);
+    } else if (damagePlayer(CONFIG.corpseBurstDamagePlayer) === 'body') {
       doFlash(0.5, '#ff3b30');
       addShake(0.6);
       addHitstop(0.06);
@@ -1333,6 +1392,10 @@ const locked = () => document.pointerLockElement === renderer.domElement;
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
+  // Ctrl（ガード）を握ったまま押したキーをブラウザのショートカットにしない
+  // （Ctrl+D のブックマーク、Ctrl+S の保存など）。Ctrl+W だけはブラウザが
+  // 横取りできないので、下の beforeunload で閉じる前に確認を出す
+  if (e.ctrlKey && locked()) e.preventDefault();
   if (!locked() || e.repeat) return;
 
   // 操作説明を開いているあいだは、ページ送りと閉じる以外の入力を通さない
@@ -1350,6 +1413,12 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Digit1') { equipArms(ARM.FIST); return; }
   if (e.code === 'Digit2') { equipArms(ARM.GUN); return; }
   if (e.code === 'Digit3') { equipArms(ARM.TENTACLE); return; }
+  // 体スキルの付け替え（プロトタイプ検証用）。4=阿修羅 / 5=回復。未使用に戻る
+  if (e.code === 'Digit4') { setBodySkill(SKILL.ASURA); return; }
+  if (e.code === 'Digit5') { setBodySkill(SKILL.HEAL); return; }
+
+  // 体スキル。体ごとに1回だけ
+  if (e.code === 'KeyZ') { useBodySkill(); return; }
 
   // Qは長押し。押している間だけライジングし、離すとゴムのように戻る
   if (e.code === 'KeyQ') {
@@ -1420,8 +1489,13 @@ document.addEventListener('mousedown', (e) => {
     return;
   }
   if (state !== S.HUMAN) return;
+  if (player.guard) return;          // ガード中は殴れない（構えを解けば出る）
   const arm = player.arms[side];
-  if (arm.lost) { showFeedback('NO ARM', '#8b8f88', 22); return; }
+  if (arm.lost) {
+    // 本体の腕が無くても、阿修羅の追加の腕が残っていればそっちが殴る
+    if (canCancelNow() && asuraTrigger(side)) return;
+    showFeedback('NO ARM', '#8b8f88', 22); return;
+  }
   if (arm.kind === ARM.GUN) {
     // 銃腕：押した瞬間に1発、押している間は連射（パージ・パンチはない）
     gunHold[side] = true;
@@ -1454,7 +1528,27 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 const startOverlay = document.getElementById('startOverlay');
-startOverlay.addEventListener('click', () => renderer.domElement.requestPointerLock());
+// 開始と同時に全画面にして、キーボードをロックする。
+// Ctrl+W（タブを閉じる）・Ctrl+T・Ctrl+N などはブラウザが先に取ってしまい、
+// 普段はページから止められない。全画面中だけ Keyboard Lock でページに渡してもらえる
+// （Chrome / Edge）。ガード（Ctrl）を握ったまま WASD で歩けるようにするため。
+// Escape はロックしない＝これまでどおり ESC でマウスと全画面が解除される
+const LOCK_KEYS = [
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyR', 'KeyT', 'KeyN', 'KeyF', 'KeyG',
+  'KeyB', 'KeyV', 'KeyZ', 'KeyX', 'KeyC', 'Tab', 'Space',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
+];
+startOverlay.addEventListener('click', () => {
+  const root = document.documentElement;
+  if (!document.fullscreenElement && root.requestFullscreen) {
+    root.requestFullscreen().then(() => {
+      if (navigator.keyboard && navigator.keyboard.lock) {
+        navigator.keyboard.lock(LOCK_KEYS).catch(() => {});
+      }
+    }).catch(() => {});   // 全画面を断られても普通に遊べる（Ctrl+W だけ確認ダイアログで守る）
+  }
+  renderer.domElement.requestPointerLock();
+});
 document.addEventListener('pointerlockchange', () => {
   startOverlay.classList.toggle('hidden', locked());
   if (!locked() && manualOpen) closeManual();
@@ -1491,11 +1585,60 @@ const ui = {
     CORE: document.getElementById('tagCore'),
   },
 };
-// 丸の中身（fill / 数値）を引きやすいようにまとめておく
+// 丸の中身（fill / アイコン）を引きやすいようにまとめておく
 const hudCircle = {};
 for (const key of ['LEFT', 'RIGHT', 'CORE']) {
   const el = ui.circles[key];
-  hudCircle[key] = { el, fill: el.querySelector('.fill'), num: el.querySelector('.num') };
+  hudCircle[key] = { el, fill: el.querySelector('.fill'), icon: el.querySelector('.icon'), iconKey: '' };
+}
+ui.skillRing = document.getElementById('skillRing');
+ui.skillKey = document.getElementById('skillKey');
+let hudSkillFire = 0;      // 体スキルを使った直後、縁の光が弾けて消える演出の残り(s)
+
+/* ---------- HUDのアイコン ----------
+   丸の中に描く記号化したイラスト。数字の代わりにここで「何の腕／体か」を読ませる。
+   残量は丸の塗り（fill）が受け持つ。
+   全部同じ描き方にそろえる：48x48、白の線（太さ3・角丸）、塗りは要所だけ。
+   色は CSS（currentColor）。暗い縁取りは CSS の drop-shadow で付ける            */
+const HUD_ICON = {
+  // 拳：握った指の段と、横に回した親指
+  fist: '<rect x="13" y="12" width="22" height="18" rx="5"/>' +
+        '<path d="M20 12v7M27 12v7"/><path d="M13 24h9a3 3 0 0 1 0 6"/>' +
+        '<path d="M17 30v8M31 30v8"/>',
+  // パージ済み：手首から先がない（ぎざぎざの断面）
+  purged: '<path d="M17 40V22l3.5 3 3.5-4 3.5 4 3.5-3v18"/>' +
+          '<rect x="15" y="8" width="18" height="10" rx="4" stroke-dasharray="3 3" opacity="0.55"/>',
+  // 銃腕：拳銃のシルエット（銃身・グリップ・銃口）
+  gun: '<path d="M7 17h28v8H22l-3 11h-7l2.5-11H7z"/><path d="M35 21h5"/>' +
+       '<path d="M17 25v3h4"/>',
+  // 触手腕：袖から3本がうねって出る
+  tentacle: '<rect x="14" y="33" width="20" height="7" rx="3"/>' +
+            '<path d="M19 33c-5-6 4-10-1-20"/><path d="M24 33c4-7-4-12 1-22"/>' +
+            '<path d="M29 33c5-6-3-10 3-18"/>' +
+            '<circle cx="18" cy="13" r="1.8" class="f"/><circle cx="25" cy="11" r="1.8" class="f"/>' +
+            '<circle cx="32" cy="15" r="1.8" class="f"/>',
+  // 失った腕：破線の腕に×
+  lost: '<path d="M18 12v26M30 12v26" stroke-dasharray="3 4" opacity="0.5"/>' +
+        '<path d="M15 17l18 18M33 17L15 35"/>',
+  // 頭モード：丸い頭、蜘蛛脚、しっぽの脊柱
+  head: '<circle cx="24" cy="17" r="8"/><path d="M18 22l-7 6-2 8M30 22l7 6 2 8"/>' +
+        '<path d="M21 24l-3 7v6M27 24l3 7v6"/><path d="M24 25v4" stroke-dasharray="2 2"/>',
+  // 体（スキルの絵の土台）：首の断面がある胴
+  body: '<path d="M13 19q0-4 5-4h12q5 0 5 4l-3 18H16z"/><path d="M21.5 15v-3h5v3"/>',
+  // 阿修羅：胴から左右3本ずつ腕が伸びる
+  asura: '<path d="M18.5 20q0-3 3-3h5q3 0 3 3l-1.5 15h-8z"/><path d="M22 17v-3h4v3"/>' +
+         '<path d="M19 21L9 14M19 24H7M19 28l-9 6M29 21l10-7M29 24h12M29 28l9 6"/>' +
+         '<circle cx="9" cy="14" r="2" class="f"/><circle cx="7" cy="24" r="2" class="f"/>' +
+         '<circle cx="10" cy="34" r="2" class="f"/><circle cx="39" cy="14" r="2" class="f"/>' +
+         '<circle cx="41" cy="24" r="2" class="f"/><circle cx="38" cy="34" r="2" class="f"/>',
+  // 回復：胴の真ん中に十字
+  heal: '<path d="M13 19q0-4 5-4h12q5 0 5 4l-3 18H16z"/><path d="M21.5 15v-3h5v3"/>' +
+        '<path d="M24 20.5v11M18.5 26h11" stroke-width="3.6"/>',
+};
+function setHudIcon(c, key) {
+  if (c.iconKey === key) return;      // 毎フレーム書き換えない
+  c.iconKey = key;
+  c.icon.innerHTML = '<svg viewBox="0 0 48 48">' + HUD_ICON[key] + '</svg>';
 }
 const pips = [];
 for (let i = 0; i < CONFIG.resourceMax; i++) {
@@ -1513,13 +1656,21 @@ function updatePlayerHud() {
   ui.hud.classList.toggle('head', headMode);
 
   // --- 体 / 頭 ---
+  // 体のアイコンは体スキルの絵。使えるうちは縁が光る（OWのウルトのように）
   const hp = Math.max(0, player.hp);
   const core = hudCircle.CORE;
+  const sk = player.skill;
+  const ready = !headMode && !!sk && !sk.used;
   core.fill.style.setProperty('--hp', (hp / CONFIG.playerMaxHp * 100) + '%');
-  core.num.textContent = Math.ceil(hp);
+  setHudIcon(core, headMode ? 'head' : (sk ? sk.kind : 'body'));
   core.el.classList.toggle('head', headMode);
   core.el.classList.toggle('low', hp <= CONFIG.playerMaxHp * 0.3);
-  ui.tags.CORE.textContent = headMode ? 'HEAD' : 'BODY';
+  core.el.classList.toggle('ready', ready);
+  ui.skillRing.classList.toggle('on', ready);
+  ui.skillKey.classList.toggle('on', ready);
+  ui.skillRing.classList.toggle('fire', hudSkillFire > 0 && !headMode);
+  ui.tags.CORE.textContent = headMode ? 'HEAD' : (sk ? SKILL_LABEL[sk.kind] : 'BODY');
+  ui.tags.CORE.classList.toggle('used', !headMode && !!sk && sk.used);
 
   // --- 腕（頭モードでは丸ごと非表示なので更新だけしておく）---
   for (const side of ['LEFT', 'RIGHT']) {
@@ -1528,7 +1679,8 @@ function updatePlayerHud() {
     const isGun = st.kind === ARM.GUN;
     const isTent = st.kind === ARM.TENTACLE;
     c.fill.style.setProperty('--hp', (st.lost ? 0 : st.hp / CONFIG.armMaxHp * 100) + '%');
-    c.num.textContent = st.lost ? '×' : Math.ceil(st.hp);
+    setHudIcon(c, st.lost ? 'lost' : isGun ? 'gun' : isTent ? 'tentacle'
+                                    : (st.purged ? 'purged' : 'fist'));
     c.el.classList.toggle('lost', st.lost);
     c.el.classList.toggle('purged', st.purged && !st.lost);
     c.el.classList.toggle('swapped', st.swapped && !isGun && !isTent && !st.lost);
@@ -1642,6 +1794,7 @@ function startPunch(side) {
   } else {
     player.attack = { side, type: 'punch', t: 0, startup: CONFIG.punchStartup, resolved: false };
   }
+  asuraTrigger(side);     // 阿修羅：同じ側の追加の腕も少し遅れて続く
   bossTryCounterKick();   // ダクトの男はここに割り込んでくる
 }
 
@@ -1675,7 +1828,8 @@ function canMove() {
 }
 
 function moveSpeedNow() {
-  return (state === S.HEAD) ? CONFIG.headMoveSpeed : CONFIG.moveSpeed;
+  if (state === S.HEAD) return CONFIG.headMoveSpeed;
+  return CONFIG.moveSpeed * (player.guard ? CONFIG.guardMoveMul : 1);
 }
 
 function findTargetEnemy(range, angleDeg) {
@@ -1738,6 +1892,91 @@ function noUsableArm() {
 }
 
 /* =========================================================
+   ガード（Ctrl長押し）と被ダメージ
+   体へのダメージ（敵の攻撃・死体の爆発・ボスのキック）は全部 damagePlayer() を通す。
+   ガード中は guardDamageMul 倍にして、残っている腕それぞれに同じ量を入れる。
+   体には入らない。両腕とも無ければガードにならず体へ入る。
+   頭モードの出血は体のHPそのものなのでここを通さない。
+   ========================================================= */
+let guardBlend = 0;        // 構えの見た目(0-1)
+let guardHitT = 0;         // ガードで受けた直後の腕の押し込み(s)
+
+function guardHeld() { return !!(keys.ControlLeft || keys.ControlRight); }
+
+// 毎フレーム、今ガードしているかを決める
+function updateGuard(rdt) {
+  let want = guardHeld() && state === S.HUMAN && player.hp > 0 && locked() && !manualOpen &&
+             player.dodgeT <= 0 && player.stagger <= 0 && !inFinisher() && !tentHold;
+  if (want && !player.guard && player.attack) {
+    // 出している攻撃は振り抜き以降ならキャンセルして構える。発生中は振り抜くまで待つ
+    if (canCancelNow()) cancelCurrentAction(); else want = false;
+  }
+  if (want && !player.guard) {
+    // 構えた瞬間に、握っていたクリック（長押し・連射・先行入力）を捨てる
+    punchBuffer = null;
+    mouseHold.LEFT = null; mouseHold.RIGHT = null;
+    gunHold.LEFT = false; gunHold.RIGHT = false;
+  }
+  player.guard = want;
+  const target = want ? 1 : 0;
+  const step = rdt / CONFIG.guardRaiseTime;
+  guardBlend = guardBlend < target ? Math.min(target, guardBlend + step) : Math.max(target, guardBlend - step);
+  if (guardHitT > 0) guardHitT = Math.max(0, guardHitT - rdt);
+}
+
+// 返り値: 'guard' = 腕が受けた / 'body' = 体（頭モードなら頭）が受けた
+function damagePlayer(amount) {
+  if (player.guard && state === S.HUMAN) {
+    const sides = ['LEFT', 'RIGHT'].filter((s) => !player.arms[s].lost);
+    if (sides.length) {
+      const dmg = amount * CONFIG.guardDamageMul;
+      // 先に出す。腕が壊れたときの「ARM GONE」が上に出るように
+      showFeedback('GUARD  -' + Math.round(dmg), '#b8d4ee', 28);
+      for (const s of sides) damageArm(s, dmg);
+      guardHitT = 0.22;
+      addHitstop(0.05);
+      addShake(0.18);
+      doFlash(0.18, '#9fc4e8');
+      return 'guard';
+    }
+  }
+  player.hp = Math.max(0, player.hp - amount);
+  return 'body';
+}
+
+// ガードの一人称の構え。両腕を斜めに倒して顔の前で交差させる。
+// dir は前腕の向き（カメラ基準）。左右で少しずらして X に重ねる
+const GUARD_POSE = {
+  // 交差点は画面の下寄り。顔の前に上げきると、構えたまま敵の動きが見えない
+  LEFT: { pos: [-0.34, -0.40, -0.42], dir: [0.85, 0.40, -0.35] },
+  RIGHT: { pos: [0.34, -0.36, -0.46], dir: [-0.85, 0.34, -0.40] },
+};
+const _gPos = new THREE.Vector3();
+const _gDir = new THREE.Vector3();
+const _gQ = new THREE.Quaternion();
+const _gFwd = new THREE.Vector3(0, 0, -1);
+function applyGuardPose(hand, side) {
+  if (guardBlend <= 0) return;
+  const g = guardBlend * guardBlend * (3 - 2 * guardBlend);
+  const P = GUARD_POSE[side];
+  _gDir.set(P.dir[0], P.dir[1], P.dir[2]).normalize();
+  // 受けた直後は腕ごと手前へ押し込まれる
+  _gPos.set(P.pos[0], P.pos[1] - guardHitT * 0.15, P.pos[2] + guardHitT * 0.35);
+  _gPos.applyQuaternion(camera.quaternion).add(camera.position);
+  _gQ.setFromUnitVectors(_gFwd, _gDir).premultiply(camera.quaternion);
+  hand.position.lerp(_gPos, g);
+  hand.quaternion.slerp(_gQ, g);
+}
+
+// 全画面にできなかった（断られた・Keyboard Lock の無いブラウザ）ときの保険。
+// Ctrl+W がページに届かないので、遊んでいる間はブラウザに「閉じますか？」を出させる
+window.addEventListener('beforeunload', (e) => {
+  if (!locked()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
+/* =========================================================
    銃腕
    player.attack を占有しない（もう片方の腕のパンチと同時に撃てる）。
    撃てないのは人間モード以外・フィニッシャー中・ドッジ中・死亡時。
@@ -1756,19 +1995,25 @@ function tryShoot(side) {
     -Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   const offset = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw))
     .multiplyScalar(side === 'LEFT' ? -0.28 : 0.28);
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.05, 0.05, 0.38),
-    new THREE.MeshBasicMaterial({ color: 0xffe9a0 }));
-  mesh.position.copy(eye).add(offset).addScaledVector(fwd, 0.7);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), fwd);
-  scene.add(mesh);
-  projectiles.push({
-    obj: mesh, side, kind: 'bullet',
-    vel: fwd.clone().multiplyScalar(CONFIG.gunBulletSpeed), travelled: 0, dead: false,
-  });
+  spawnBullet(eye.add(offset).addScaledVector(fwd, 0.7), fwd, side);
   player.gunRecoil[side] = 1;
   addShake(0.06);
   damageArm(side, CONFIG.gunShotCost);
+  asuraTrigger(side);     // 阿修羅：同じ側の追加の腕も続けて撃つ
+}
+
+// 弾を1発出す。本体の銃腕と阿修羅の追加の腕で共用
+function spawnBullet(pos, dir, side, extra) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.05, 0.05, 0.38),
+    new THREE.MeshBasicMaterial({ color: 0xffe9a0 }));
+  mesh.position.copy(pos);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  scene.add(mesh);
+  projectiles.push({
+    obj: mesh, side, kind: 'bullet', extra: !!extra,
+    vel: dir.clone().multiplyScalar(CONFIG.gunBulletSpeed), travelled: 0, dead: false,
+  });
 }
 
 /* --- 飛び道具の当たり判定に使う体の縦線分（足元からの高さ）---
@@ -1833,7 +2078,8 @@ function resolveBullet(p, en) {
     addHitstop(0.02);
     showFeedback('SHOT  -' + Math.round(dmg), '#ffe9a0', 22);
   }
-  checkEnemyEscape(en);
+  // 阿修羅の追加の腕の弾は回避の判定に数えない（asuraHit と同じ理由）
+  if (!p.extra) checkEnemyEscape(en);
 }
 
 function doPunch(side) {
@@ -1877,7 +2123,7 @@ function doKick() {
   // そのパンチの発生ぶんキックがさらに遅れる（先行入力が防御を殺す）
   punchBuffer = null;
   // 振り抜き以降のパンチ／キックは上書きできる。発生中とフィニッシャーは不可
-  if (!canCancelNow()) return;
+  if (!canCancelNow() || player.guard) return;   // ガード中はキックも出さない
   if (player.resource < 1) { showFeedback('NO RESOURCE', '#8b8f88', 22); return; }
   cancelCurrentAction();
   player.resource -= 1;
@@ -2434,7 +2680,7 @@ function hitPlayer(en) {
     if (!inFinisher()) showFeedback('DODGE', '#9ce8ff', 24);  // 掴み中の無敵は無言
     return;
   }
-  player.hp = Math.max(0, player.hp - (CONFIG.enemyDamageToPlayer + (en.bonusDamage || 0)));
+  if (damagePlayer(CONFIG.enemyDamageToPlayer + (en.bonusDamage || 0)) === 'guard') return;
   doFlash(0.4, '#ff3b30');
   addShake(0.3);
   addHitstop(0.05);
@@ -2619,6 +2865,8 @@ function enterHeadMode() {
   createCorpse(playerPos.x, playerPos.z, yaw + Math.PI, {
     arms: { LEFT: cloneArmState(player.arms.LEFT), RIGHT: cloneArmState(player.arms.RIGHT) },
     fuse: CONFIG.corpseFuse, hp: player.hp,
+    skill: player.skill,                 // 使用済みかどうかも体と一緒に残る
+    extraArms: stashAsuraArms(),         // 阿修羅の腕は体に付いたまま（拾い直すと生え直す）
   });
   // 頭は後ろへ跳ぶ。同じ座標のままだと自分の死体の中に埋まり、
   // 切り離した直後の一番見せたい瞬間が死体で埋まってしまう。
@@ -2777,6 +3025,10 @@ function finishPossess() {
     const a = c.arms[key];
     player.arms[key] = a ? cloneArmState(a) : makeArmState(ARM.FIST, { lost: true });
   }
+  // 体スキルも体と一緒に入れ替わる。阿修羅を使った自分の体なら腕も生え直す
+  player.skill = Object.assign({}, c.skill);
+  clearAsuraArms();
+  if (c.extraArms) spawnAsuraArms(c.extraArms);
   player.gunRecoil.LEFT = 0; player.gunRecoil.RIGHT = 0;
   player.attack = null; player.recoverT = 0;
   updateArmVisuals();
@@ -3147,26 +3399,33 @@ function armColor(st) {
   return st.swapped ? COLOR_ENEMY_ARM : COLOR_PLAYER_ARM;
 }
 
+// 一人称の手（makeFpHand）の見た目を腕の状態に合わせる。
+// 本体の左右の手と、阿修羅の追加の腕で共用
+function applyHandLook(hand, st) {
+  const color = armColor(st);
+  const isGun = st.kind === ARM.GUN;
+  const isTent = st.kind === ARM.TENTACLE;
+  hand.userData.fore.material.color.setHex(color);
+  hand.userData.fist.material.color.setHex(color);
+  hand.userData.fist.visible = !st.purged && !isGun && !isTent;
+  hand.userData.barrel.visible = isGun;
+  // 触手の節は updateTentacleArms() が毎フレーム出し入れする（腕の中の節は隠す）。
+  // ここでは種類が変わったときに全部消す／出すだけ
+  hand.userData.cuff.visible = isTent;
+  for (const tn of hand.userData.tentacles) {
+    tn.init = false;                 // 前の形から補間しないよう遅延追従を初期化
+    for (const s of tn.segs) s.visible = isTent;
+  }
+  hand.userData.lost = st.lost;      // 描画側で非表示にする
+}
+
 function updateArmVisuals() {
   for (const side of ['LEFT', 'RIGHT']) {
     const st = player.arms[side];
     const color = armColor(st);
-    const isGun = st.kind === ARM.GUN;
     const isTent = st.kind === ARM.TENTACLE;
-    const hand = fpHands[side];
-    hand.userData.fore.material.color.setHex(color);
-    hand.userData.fist.material.color.setHex(color);
-    hand.userData.fist.visible = !st.purged && !isGun && !isTent;
-    hand.userData.barrel.visible = isGun;
-    // 触手の節は updateTentacleArms() が毎フレーム出し入れする（腕の中の節は隠す）。
-    // ここでは種類が変わったときに全部消す／出すだけ
-    hand.userData.cuff.visible = isTent;
-    for (const tn of hand.userData.tentacles) {
-      tn.init = false;                 // 前の形から補間しないよう遅延追従を初期化
-      for (const s of tn.segs) s.visible = isTent;
-    }
+    applyHandLook(fpHands[side], st);
     if (!isTent && tentHold && tentHold.side === side) detachTentacle();
-    hand.userData.lost = st.lost;         // 描画側で非表示にする
     const bodyArm = side === 'LEFT' ? playerArmL : playerArmR;
     bodyArm.material.color.setHex(color);
     bodyArm.scale.y = st.purged ? 0.65 : 1;
@@ -3930,7 +4189,10 @@ function tentBladeAngle(atk, t) {
   return atk.dir * k * (CONFIG.tentSweepSpan * Math.PI / 180);
 }
 
-function updateTentacleSweep(atk) {
+// onHit: 当たった敵ごとに呼ぶ。省略時は本体の腕の tentSweepHit。
+// 阿修羅の追加の腕も同じ帯の判定を使い、当たったときの処理だけ差し替える
+function updateTentacleSweep(atk, onHit) {
+  onHit = onHit || tentSweepHit;
   const S0 = atk.startup, A1 = CONFIG.tentSweepActive;
   const cur = tentBladeAngle(atk, atk.t);
   if (atk.t < S0 || atk.t > S0 + A1) { atk.prevAng = cur; return; }
@@ -3958,9 +4220,9 @@ function updateTentacleSweep(atk) {
     const ang = Math.atan2(dx * rgtX + dz * rgtZ, dx * fwdX + dz * fwdZ);
     if (ang < lo - pad || ang > hi + pad) continue;
     atk.hitSet.add(en);
-    tentSweepHit(en, atk);
-    // フィニッシャーに差し替わったら、この薙ぎはもう進まない
-    if (player.attack !== atk) return;
+    onHit(en, atk);
+    // フィニッシャーに差し替わったら、この薙ぎはもう進まない（追加の腕は player.attack を持たない）
+    if (!atk.extra && player.attack !== atk) return;
   }
 }
 
@@ -4023,6 +4285,72 @@ function tentSweepHit(en, atk) {
    手首より奥（z > -0.50）に来た節は非表示にして、腕の中に引っ込んで見せる  */
 const _tIdeal = new THREE.Vector3();
 
+// 手元の触手3本を1フレーム進める（うねり・薙ぎ・遅延追従）。
+// 本体の左右の手と、阿修羅の追加の腕で共用
+function animateHandTentacles(hand, sideBias, breath, out, arc, step, et) {
+  const zWrist = -0.50;
+  const root = zWrist + (CONFIG.tentLength - out);   // 根元は腕の中
+
+  for (let i = 0; i < hand.userData.tentacles.length; i++) {
+    const tn = hand.userData.tentacles[i];
+    const segs = tn.segs, cur = tn.cur, ideal = tn.ideal, n = segs.length;
+    const ph = tn.phase + sideBias;
+    // たまに1本だけ大きくうねる。鋭いピークにして「不規則だが周期的」にする
+    const accent = Math.pow(Math.max(0, Math.sin(et * 0.53 + ph * 1.7)), 6);
+
+    // --- 1. 理想位置 ---
+    for (let k = 0; k < n; k++) {
+      const t = k / (n - 1);
+      const z = root - t * CONFIG.tentLength;
+      const sOut = zWrist - z;                       // 手首から出ている長さ
+      const grow = Math.max(0, Math.min(1, sOut / Math.max(0.05, out)));
+      const amp = CONFIG.tentIdleWave * grow * grow *
+                  (1 + breath * 0.25) * (1 + accent * CONFIG.tentIdleAccent);
+      // 周波数の違うサイン波を重ねる。完全ランダムにしないことで
+      // 「生き物がうねっている」読みやすい動きになる
+      const w1 = Math.sin(et * CONFIG.tentIdleSpeed + ph + sOut * 7.0);
+      const w2 = Math.sin(et * CONFIG.tentIdleSpeed * 1.7 + ph * 1.3 + sOut * 4.0);
+      const w3 = Math.cos(et * CONFIG.tentIdleSpeed * 0.9 + ph * 2.0 + sOut * 6.0);
+      ideal[k].set(
+        tn.lane * CONFIG.tentSpread * (0.4 + grow * 0.6)
+          + (w1 * 0.7 + w2 * 0.3) * amp
+          + arc * 0.6 * grow,
+        w3 * amp * 0.8 + (i === 1 ? 0.03 : -0.02),
+        z);
+    }
+
+    // --- 2. 遅延追従（根元は即、先端ほど遅れる）---
+    if (!tn.init) {
+      for (let k = 0; k < n; k++) cur[k].copy(ideal[k]);
+      tn.init = true;
+    } else {
+      for (let k = 0; k < n; k++) {
+        const t = k / (n - 1);
+        const rate = CONFIG.tentFollowRoot +
+                     (CONFIG.tentFollowTip - CONFIG.tentFollowRoot) * t;
+        cur[k].lerp(ideal[k], 1 - Math.exp(-rate * step));
+      }
+    }
+
+    // --- 3. 長さ拘束（理想の節間距離に戻す）---
+    for (let it = 0; it < 2; it++) {
+      for (let k = 1; k < n; k++) {
+        const want = ideal[k].distanceTo(ideal[k - 1]);
+        _tIdeal.copy(cur[k]).sub(cur[k - 1]);
+        const L = _tIdeal.length();
+        if (L > 1e-5) cur[k].copy(cur[k - 1]).addScaledVector(_tIdeal.divideScalar(L), want);
+      }
+    }
+
+    for (let k = 0; k < n; k++) {
+      const seg = segs[k];
+      if (cur[k].z > zWrist) { seg.visible = false; continue; }   // 腕の中
+      seg.visible = true;
+      seg.position.copy(cur[k]);
+    }
+  }
+}
+
 function updateTentacleArms(rdt) {
   const et = clock.elapsedTime;
   // 触手のフィニッシャー中は、手元の3本を引っ込めて
@@ -4055,68 +4383,9 @@ function updateTentacleArms(rdt) {
     const holding = !!(tentHold && tentHold.side === side) ||
                     !!(tentFin && tentFin.side === side);
     if (holding) out = CONFIG.tentIdleOut * 0.45;
-
-    const zWrist = -0.50;
-    const root = zWrist + (CONFIG.tentLength - out);   // 根元は腕の中
-
-    for (let i = 0; i < hand.userData.tentacles.length; i++) {
-      const tn = hand.userData.tentacles[i];
-      const segs = tn.segs, cur = tn.cur, ideal = tn.ideal, n = segs.length;
-      const ph = tn.phase + sideBias;
-      // たまに1本だけ大きくうねる。鋭いピークにして「不規則だが周期的」にする
-      const accent = Math.pow(Math.max(0, Math.sin(et * 0.53 + ph * 1.7)), 6);
-
-      // --- 1. 理想位置 ---
-      for (let k = 0; k < n; k++) {
-        const t = k / (n - 1);
-        const z = root - t * CONFIG.tentLength;
-        const sOut = zWrist - z;                       // 手首から出ている長さ
-        const grow = Math.max(0, Math.min(1, sOut / Math.max(0.05, out)));
-        const amp = CONFIG.tentIdleWave * grow * grow *
-                    (1 + breath * 0.25) * (1 + accent * CONFIG.tentIdleAccent);
-        // 周波数の違うサイン波を重ねる。完全ランダムにしないことで
-        // 「生き物がうねっている」読みやすい動きになる
-        const w1 = Math.sin(et * CONFIG.tentIdleSpeed + ph + sOut * 7.0);
-        const w2 = Math.sin(et * CONFIG.tentIdleSpeed * 1.7 + ph * 1.3 + sOut * 4.0);
-        const w3 = Math.cos(et * CONFIG.tentIdleSpeed * 0.9 + ph * 2.0 + sOut * 6.0);
-        ideal[k].set(
-          tn.lane * CONFIG.tentSpread * (0.4 + grow * 0.6)
-            + (w1 * 0.7 + w2 * 0.3) * amp
-            + arc * 0.6 * grow,
-          w3 * amp * 0.8 + (i === 1 ? 0.03 : -0.02),
-          z);
-      }
-
-      // --- 2. 遅延追従（根元は即、先端ほど遅れる）---
-      if (!tn.init) {
-        for (let k = 0; k < n; k++) cur[k].copy(ideal[k]);
-        tn.init = true;
-      } else {
-        for (let k = 0; k < n; k++) {
-          const t = k / (n - 1);
-          const rate = CONFIG.tentFollowRoot +
-                       (CONFIG.tentFollowTip - CONFIG.tentFollowRoot) * t;
-          cur[k].lerp(ideal[k], 1 - Math.exp(-rate * step));
-        }
-      }
-
-      // --- 3. 長さ拘束（理想の節間距離に戻す）---
-      for (let it = 0; it < 2; it++) {
-        for (let k = 1; k < n; k++) {
-          const want = ideal[k].distanceTo(ideal[k - 1]);
-          _tIdeal.copy(cur[k]).sub(cur[k - 1]);
-          const L = _tIdeal.length();
-          if (L > 1e-5) cur[k].copy(cur[k - 1]).addScaledVector(_tIdeal.divideScalar(L), want);
-        }
-      }
-
-      for (let k = 0; k < n; k++) {
-        const seg = segs[k];
-        if (cur[k].z > zWrist) { seg.visible = false; continue; }   // 腕の中
-        seg.visible = true;
-        seg.position.copy(cur[k]);
-      }
-    }
+    // ガード中も引っ込める。腕を横に倒すと触手が画面を横切って前が見えない
+    out *= 1 - 0.55 * guardBlend;
+    animateHandTentacles(hand, sideBias, breath, out, arc, step, et);
   }
 
   /* --- 伸ばした触手（ワールド座標）---
@@ -4187,6 +4456,403 @@ function updateTentacleArms(rdt) {
       segs[k].scale.setScalar((0.9 + Math.sin(t * Math.PI) * 0.5) * (stuck ? 1.15 : 1) * th);
     }
   }
+}
+
+/* =========================================================
+   体スキル（BODY SKILL）
+   体ごとに1回だけZで使えるスキル。使うとその体の player.skill.used が立ち、
+   中央の体アイコンの縁の光が消える（以後その体では使えない）。
+
+   阿修羅（ASURA）:
+     3時・2時（右）／9時・10時（左）の位置に腕が生えて6本腕になる。
+     追加の腕は一人称の手（makeFpHand）をそのまま流用し、置き場所だけ変えて
+     手先が画面中央を指すように向きを補正している。動き（パンチの振り抜き・
+     銃の反動・触手のうねりと薙ぎ）は本体の腕と同じ関数を使う。
+     本体の腕が攻撃すると（startPunch / tryShoot から asuraTrigger）、
+     同じ側の追加の腕が asuraFollowDelay ずつ遅れて「自分の腕の種類の攻撃」を出す。
+     追加の腕は player.attack を持たない（本体の腕のキャンセルや先行入力を邪魔しない）。
+     耐久は腕ごとに減って 0 で肉片になる。HUDには出さない。
+     生えたときに本体の腕の種類をコピーし、ライジングで本体の腕を
+     交換しても変わらない（本体の腕が無ければ拳が生える）。
+
+   回復（HEAL）:
+     緑の光の粒が立ちのぼり、画面の縁が緑に光って、体のHPを全回復する。
+   ========================================================= */
+// 一人称の追加の腕の置き場所（右側。左は x を反転）。カメラ基準のローカル座標。
+// 根元は画面の外に置き、手首から先だけが画面の端から中央へ向かって伸びる
+const ASURA_SLOTS = [
+  { pos: [0.55, -0.05, -0.40], bodyAng: 1.62 },   // 3時（左は9時）
+  { pos: [0.45, 0.26, -0.40], bodyAng: 2.25 },    // 2時（左は10時）
+];
+let asuraArms = [];        // { side, slot, st, hand, pivot, bodyMesh, grow, sprouted, queue, act, dirToggle }
+let asuraCombo = 0;        // 追加の腕のヒット数（表示用）
+let asuraComboT = 0;
+
+/* --- 検証用：今の体のスキルを差し替える（4/5キー）。未使用に戻る --- */
+function setBodySkill(kind) {
+  if (state !== S.HUMAN) return;
+  clearAsuraArms();
+  player.skill = makeBodySkill(kind);
+  showFeedback('BODY SKILL: ' + SKILL_LABEL[kind], '#ffd75e', 26);
+}
+
+function useBodySkill() {
+  // 体があるとき（人間モード）だけ。掴み演出の途中には割り込ませない
+  if (state !== S.HUMAN || player.hp <= 0 || inFinisher()) return;
+  const sk = player.skill;
+  if (!sk) return;
+  if (sk.used) { showFeedback('SKILL USED', '#8b8f88', 22); return; }
+  sk.used = true;
+  hudSkillFire = 0.7;      // HUDの縁が弾けて消える演出
+  if (sk.kind === SKILL.HEAL) castHeal(); else castAsura();
+}
+
+/* ---------- 阿修羅 ---------- */
+function castAsura() {
+  const states = [];
+  // 3時と9時から先に、少し遅れて2時と10時が生える
+  for (let slot = 0; slot < ASURA_SLOTS.length; slot++) {
+    for (const side of ['RIGHT', 'LEFT']) {
+      const base = player.arms[side];
+      const st = base.lost ? makeArmState(ARM.FIST)
+                           : makeArmState(base.kind, { swapped: base.swapped });
+      states.push({ side, slot, st });
+    }
+  }
+  spawnAsuraArms(states);
+  addHitstop(0.08);
+  addShake(0.45);
+  doFlash(0.30, '#ffcf7a');
+  showFeedback('ASURA!', '#ffd75e', 44);
+}
+
+function spawnAsuraArms(states) {
+  clearAsuraArms();
+  states.forEach((d, i) => {
+    const sign = d.side === 'LEFT' ? -1 : 1;
+    const st = cloneArmState(d.st);
+    const hand = makeFpHand(sign);
+    applyHandLook(hand, st);
+    hand.visible = false;
+    // ライジング中に見える三人称の体にも生やす（肩から外へ。少し前へ倒す）
+    const pivot = new THREE.Group();
+    pivot.rotation.order = 'ZXY';
+    pivot.position.set(sign * 0.36, 1.44, -0.02);
+    pivot.rotation.set(0.35, 0, sign * ASURA_SLOTS[d.slot].bodyAng);
+    const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.62, 0.11),
+      new THREE.MeshLambertMaterial({ color: armColor(st) }));
+    bodyMesh.position.y = -0.31;
+    pivot.add(bodyMesh);
+    pivot.scale.y = 0.01;
+    playerGroup.add(pivot);
+    asuraArms.push({
+      side: d.side, slot: d.slot, st, hand, pivot, bodyMesh,
+      grow: -i * CONFIG.asuraGrowStagger,   // 負の間はまだ生えていない
+      sprouted: false, queue: [], act: null, dirToggle: 1,
+    });
+  });
+}
+
+// 体を捨てるとき用。腕の状態だけ取り出して見た目は消す
+function stashAsuraArms() {
+  if (!asuraArms.length) return null;
+  const out = asuraArms.map((xa) => ({ side: xa.side, slot: xa.slot, st: cloneArmState(xa.st) }));
+  clearAsuraArms();
+  return out;
+}
+
+function clearAsuraArms() {
+  for (const xa of asuraArms) {
+    scene.remove(xa.hand);
+    playerGroup.remove(xa.pivot);
+  }
+  asuraArms = [];
+}
+
+// 生え具合(0-1)。少し行き過ぎてから戻る（にょきっと出る）
+function asuraGrowK(xa) {
+  const g = Math.max(0, Math.min(1, xa.grow / CONFIG.asuraGrowTime));
+  if (g <= 0) return 0;
+  const c = 1.9, u = g - 1;
+  return 1 + (c + 1) * u * u * u + c * u * u;
+}
+
+// 本体の腕が攻撃した。同じ側の追加の腕に、遅れて続く攻撃を積む。
+// 返り値: 続く腕が1本でもあったか（本体の腕が無いときのクリックで使う）
+function asuraTrigger(side) {
+  const main = player.attack;
+  let n = 0;
+  for (const xa of asuraArms) {
+    if (xa.side !== side || xa.st.lost) continue;
+    if (xa.grow < CONFIG.asuraGrowTime * 0.6) continue;   // 生えきる前は殴らない
+    if (xa.queue.length >= 2) continue;
+    // 触手の薙ぎは本体の腕と同じ向きに振る（本体が触手でなければ左右交互）
+    const dir = (main && main.tent && main.type === 'punch' && main.side === side)
+      ? main.dir : (xa.dirToggle = -xa.dirToggle);
+    xa.queue.push({ t: CONFIG.asuraFollowDelay * (xa.slot + 1), dir });
+    n++;
+  }
+  return n > 0;
+}
+
+// 追加の腕がまだ前の攻撃を振り抜いていないか（本体の腕のキャンセル可能点と同じ考え方）
+function asuraBusy(xa) {
+  const a = xa.act;
+  if (!a) return false;
+  if (a.type === 'punch') return a.t < a.startup + CONFIG.punchActive;
+  if (a.type === 'sweep') return a.t < a.startup + CONFIG.tentSweepCancel;
+  return a.t < CONFIG.gunInterval * 0.5;
+}
+
+function asuraStartAct(xa, q) {
+  if (asuraBusy(xa)) return;
+  const kind = xa.st.kind;
+  if (kind === ARM.GUN) {
+    xa.act = { type: 'shot', t: 0 };
+    asuraShoot(xa);
+  } else if (kind === ARM.TENTACLE) {
+    xa.act = { type: 'sweep', tent: true, extra: xa, side: xa.side, dir: q.dir, t: 0,
+               startup: CONFIG.tentSweepStartup, hitSet: new Set(), hits: 0, prevAng: undefined };
+  } else {
+    xa.act = { type: 'punch', t: 0, startup: CONFIG.punchStartup, resolved: false };
+  }
+}
+
+const _xaPos = new THREE.Vector3();
+const _xaDir = new THREE.Vector3();
+const _xaOut = new THREE.Vector3();
+const _xaQ = new THREE.Quaternion();
+const _xaFwd = new THREE.Vector3(0, 0, -1);
+
+// 銃の追加の腕。銃口からクロスヘアの先へ撃つ（遠くで中央に集まる）
+function asuraShoot(xa) {
+  const eye = new THREE.Vector3(playerPos.x, playerPos.y + EYE, playerPos.z);
+  const fwd = new THREE.Vector3(
+    -Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+  const aim = eye.clone().addScaledVector(fwd, 14);
+  xa.hand.userData.barrel.getWorldPosition(_xaPos);
+  const dir = aim.sub(_xaPos).normalize();
+  spawnBullet(_xaPos.clone().addScaledVector(dir, 0.2), dir, xa.side, true);
+  damageAsuraArm(xa, CONFIG.gunShotCost);
+}
+
+function asuraPunchHit(xa) {
+  const en = findTargetEnemy(CONFIG.punchRange, CONFIG.punchAngle);
+  if (!en) return;
+  asuraHit(en, xa, CONFIG.attackDamage, CONFIG.attackStun, CONFIG.armHitCost);
+}
+
+function asuraSweepHit(en, xa, atk) {
+  if (en.state === E.GRABBED) return;
+  atk.hits++;
+  asuraHit(en, xa, CONFIG.tentSweepDamage, CONFIG.tentSweepStun, CONFIG.tentSweepHitCost);
+}
+
+// 追加の腕のヒット。掴み（フィニッシャー）は出さない＝それは本体の腕の仕事。
+// 回避の判定（checkEnemyEscape）にも数えない。数えると1クリックで3ヒットするので
+// 毎回すぐ避けられて「ぼこぼこにする」が成立しない
+function asuraHit(en, xa, dmg, stun, cost) {
+  if (en.boss && en.state === E.HIDDEN) {
+    damageAsuraArm(xa, cost);
+    bossFound(true);
+    return;
+  }
+  if (en.state === E.DEAD || en.state === E.FLEE || en.state === E.GRABBED ||
+      en.state === E.DODGE) return;
+  const mul = CONFIG.asuraDamageMul;
+  const attacking = (en.state === E.WINDUP || en.state === E.ACTIVE);
+  applyDamage(en, dmg * mul);
+  applyStun(en, stun * mul);
+  // のけぞりは延長するだけで押し出さない。本体の腕のぶんと重ねて押すと
+  // 2時（10時）の腕が届く前に間合い(punchRange)の外へ逃げてしまう
+  if (!attacking) {
+    if (en.state === E.HIT) en.t = 0;
+    else enterHitReact(en, 0.35);
+  }
+  addHitstop(CONFIG.asuraHitstop);
+  addShake(CONFIG.shakeNormal);
+  asuraCombo++;
+  asuraComboT = 0.7;
+  showFeedback('ASURA x' + asuraCombo, '#ffd75e', Math.min(44, 26 + asuraCombo * 2));
+  damageAsuraArm(xa, cost);
+}
+
+function damageAsuraArm(xa, amount) {
+  if (xa.st.lost) return;
+  xa.st.hp = Math.max(0, xa.st.hp - amount);
+  if (xa.st.hp > 0) return;
+  xa.st.lost = true;
+  xa.queue.length = 0;
+  xa.act = null;
+  xa.hand.userData.fore.getWorldPosition(_xaPos);
+  spawnFleshBurst(_xaPos, CONFIG.armLostPieces, 3.0, null, CONFIG.armGibLife);
+  xa.hand.visible = false;
+  xa.pivot.visible = false;
+  addShake(0.25);
+}
+
+// 毎フレーム：積んだ攻撃を出す → 攻撃を進める → 見た目を置く。
+// カメラが決まったあとに呼ぶ（手はカメラ基準で置く）
+function updateAsuraArms(dt, rdt) {
+  if (asuraComboT > 0) { asuraComboT -= rdt; if (asuraComboT <= 0) asuraCombo = 0; }
+  if (!asuraArms.length) return;
+  const human = (state === S.HUMAN && player.hp > 0);
+  const et = clock.elapsedTime;
+  const step = Math.max(1 / 240, Math.min(rdt, 1 / 20));
+
+  for (const xa of asuraArms) {
+    xa.grow += rdt;
+    if (xa.st.lost) { xa.hand.visible = false; xa.pivot.visible = false; continue; }
+    const gk = asuraGrowK(xa);
+    xa.pivot.visible = gk > 0;
+    xa.pivot.scale.y = Math.max(0.01, gk);
+
+    // --- 積んだ攻撃 ---
+    if (!human) xa.queue.length = 0;
+    for (let i = 0; i < xa.queue.length; i++) {
+      const q = xa.queue[i];
+      q.t -= dt;
+      if (q.t > 0) continue;
+      xa.queue.splice(i--, 1);
+      asuraStartAct(xa, q);
+      if (xa.st.lost) break;
+    }
+    if (xa.st.lost) continue;
+
+    // --- 攻撃の進行 ---
+    const a = xa.act;
+    if (a) {
+      a.t += dt;
+      if (a.type === 'punch') {
+        if (!a.resolved && a.t >= a.startup) { a.resolved = true; if (human) asuraPunchHit(xa); }
+        if (a.t >= a.startup + CONFIG.punchRecover) xa.act = null;
+      } else if (a.type === 'sweep') {
+        if (human) updateTentacleSweep(a, (en, atk) => asuraSweepHit(en, xa, atk));
+        if (a.t >= a.startup + CONFIG.tentSweepActive + CONFIG.tentSweepRecover) xa.act = null;
+      } else if (a.t >= CONFIG.gunInterval) xa.act = null;
+      if (xa.st.lost) continue;
+    }
+
+    // --- 一人称の見た目 ---
+    const vis = (state === S.HUMAN) && gk > 0;
+    xa.hand.visible = vis;
+    if (!vis) continue;
+    const act = xa.act;
+    const sign = xa.side === 'LEFT' ? -1 : 1;
+    const P = ASURA_SLOTS[xa.slot].pos;
+    const g01 = Math.max(0, Math.min(1, xa.grow / CONFIG.asuraGrowTime));
+    _xaPos.set(sign * P[0], P[1], P[2]);
+    // 手先が画面中央（前方 asuraAimDist の点）を指す向き
+    _xaDir.set(0, 0, -CONFIG.asuraAimDist).sub(_xaPos).normalize();
+    // 生えはじめは画面の外側に寄せておき、伸びながら定位置へ入ってくる
+    _xaOut.set(sign * P[0], P[1], 0).normalize();
+    _xaPos.addScaledVector(_xaOut, 0.30 * (1 - g01));
+    let punchOut = 0, recoil = 0;
+    if (act && act.type === 'punch') {
+      punchOut = swingCurve(act.t, act.startup + CONFIG.punchActive,
+                            act.startup + CONFIG.punchRecover) * 0.6;
+    } else if (act && act.type === 'shot') {
+      recoil = Math.max(0, 1 - act.t / (CONFIG.gunInterval * 0.6));
+    }
+    _xaPos.addScaledVector(_xaDir, punchOut - recoil * CONFIG.gunRecoil);
+    xa.hand.position.copy(_xaPos).applyQuaternion(camera.quaternion).add(camera.position);
+    _xaQ.setFromUnitVectors(_xaFwd, _xaDir);
+    xa.hand.quaternion.copy(camera.quaternion).multiply(_xaQ);
+    // 長さ方向に伸びて出てくる。伸びている間は少しよじれる
+    const sc = CONFIG.asuraArmScale;
+    const wid = sc * (0.55 + 0.45 * Math.min(1, g01 * 1.4));
+    xa.hand.scale.set(wid, wid, sc * Math.max(0.02, gk));
+    if (g01 < 1) xa.hand.rotateZ(Math.sin(g01 * Math.PI * 3) * 0.5 * (1 - g01));
+    xa.hand.rotateX(punchOut * 0.2 + recoil * 0.35);
+
+    if (xa.st.kind === ARM.TENTACLE) {
+      const sideBias = (xa.side === 'LEFT' ? 0 : 1.9) + 0.8 + xa.slot * 1.3;
+      const breath = Math.sin(et * CONFIG.tentIdleBreath + sideBias * 0.6);
+      let out = CONFIG.tentIdleOut * (1 + breath * 0.09), arc = 0;
+      if (act && act.type === 'sweep') {
+        const p = tentSweepPose(act, act.t);
+        arc = act.dir * CONFIG.tentSweepArc * p.arcK;
+        out = CONFIG.tentIdleOut + CONFIG.tentSweepOut * p.outK;
+        xa.hand.rotateY(-arc * 0.35);
+      }
+      animateHandTentacles(xa.hand, sideBias, breath, out, arc, step, et);
+    }
+
+    // 生えた瞬間に肩口から肉が少し散る
+    if (!xa.sprouted) {
+      xa.sprouted = true;
+      xa.hand.updateMatrixWorld(true);
+      xa.hand.userData.fore.getWorldPosition(_xaPos);
+      spawnFleshBurst(_xaPos, 3, 1.4, null, 0.6);
+    }
+  }
+}
+
+/* ---------- 回復 ---------- */
+let healFx = [];           // 立ちのぼる緑の粒 { obj, vel, life, max, base }
+const healOverlay = document.getElementById('healOverlay');
+let healOverlayT = 0;
+const healGeo = new THREE.SphereGeometry(1, 8, 6);
+
+function castHeal() {
+  const before = player.hp;
+  player.hp = CONFIG.playerMaxHp;
+  spawnHealFx();
+  healOverlayT = CONFIG.healFxTime;
+  doFlash(0.30, '#7dffb0');
+  addShake(0.12);
+  showFeedback('HEAL  +' + Math.round(CONFIG.playerMaxHp - before), '#7fe0a6', 36);
+}
+
+function spawnHealFx() {
+  const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
+  for (let i = 0; i < 46; i++) {
+    const m = new THREE.Mesh(healGeo, new THREE.MeshBasicMaterial({
+      color: i % 3 === 0 ? 0xc8ffd8 : 0x5cff9a, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false }));
+    // 体のまわりの輪から立ちのぼる。一人称でも見えるよう、半分は視界の前寄りに置く。
+    // カメラに近すぎる粒は画面いっぱいの塊になるので、輪は目から0.8m以上離す
+    const a = Math.random() * Math.PI * 2;
+    const r = 0.8 + Math.random() * 0.5;
+    const front = (i % 2 === 0) ? 1.3 + Math.random() * 0.9 : 0;
+    m.position.set(playerPos.x + Math.cos(a) * r + fwdX * front,
+                   0.1 + Math.random() * 1.0,
+                   playerPos.z + Math.sin(a) * r + fwdZ * front);
+    const base = 0.02 + Math.random() * 0.028;
+    m.scale.setScalar(base);
+    scene.add(m);
+    const max = CONFIG.healFxTime * (0.6 + Math.random() * 0.4);
+    healFx.push({ obj: m, vel: new THREE.Vector3((Math.random() - 0.5) * 0.3,
+                  0.9 + Math.random() * 1.4, (Math.random() - 0.5) * 0.3),
+                  life: max, max, base, delay: Math.random() * 0.25 });
+  }
+}
+
+function updateHealFx(rdt) {
+  if (healOverlayT > 0) healOverlayT = Math.max(0, healOverlayT - rdt);
+  // 画面の縁の緑。出だしで一気に光って、ゆっくり引く
+  const k = healOverlayT / CONFIG.healFxTime;
+  healOverlay.style.opacity = String(k > 0.85 ? (1 - k) / 0.15 : k / 0.85);
+  if (!healFx.length) return;
+  for (const p of healFx) {
+    if (p.delay > 0) { p.delay -= rdt; p.obj.visible = false; continue; }
+    p.obj.visible = true;
+    p.life -= rdt;
+    p.obj.position.addScaledVector(p.vel, rdt);
+    const u = Math.max(0, p.life / p.max);
+    p.obj.material.opacity = 0.9 * Math.min(1, u * 2.5);
+    p.obj.scale.setScalar(p.base * (0.6 + 0.4 * u));
+  }
+  const dead = healFx.filter((p) => p.life <= 0);
+  if (!dead.length) return;
+  for (const p of dead) { scene.remove(p.obj); p.obj.material.dispose(); }
+  healFx = healFx.filter((p) => p.life > 0);
+}
+
+function clearHealFx() {
+  for (const p of healFx) { scene.remove(p.obj); p.obj.material.dispose(); }
+  healFx = [];
+  healOverlayT = 0;
 }
 
 /* ---------- 画面投影 ---------- */
@@ -5097,6 +5763,11 @@ function updateBossState(en, wdt) {
   if (en.kickCd > 0) en.kickCd -= wdt;
   if (en.riseCd > 0) en.riseCd -= wdt;
 
+  // ボス戦が始まっていない（リセット直後・ハブ・デモ中）あいだは何もしない。
+  // ダクトの男は enemies に入ったまま、見えない状態でアリーナの奥に退避している。
+  // ここで止めないと通常の敵AIに落ち、部屋判定(room)も無いのでプレイヤーを
+  // どこまでも追ってきて、見えないまま殴ってくる（リセットから約40秒後に届く）
+  if (BOSS.phase === 'IDLE') return true;
   if (en.state === E.HIDDEN) return true;              // 死体のフリ。何もしない
   if (en.state === E.FLEE) { updateBossFlee(en, wdt); return true; }
 
@@ -5168,7 +5839,7 @@ function bossKickHit(en) {
   player.attack = null;
   punchBuffer = null;
   player.stagger = CONFIG.bossKickStagger;
-  player.hp = Math.max(0, player.hp - CONFIG.bossKickDamage);
+  damagePlayer(CONFIG.bossKickDamage);
   const away = new THREE.Vector3(playerPos.x - en.group.position.x, 0, playerPos.z - en.group.position.z);
   if (away.lengthSq() > 0.001) playerPos.addScaledVector(away.normalize(), 1.1);
   addHitstop(0.14); addShake(0.55);
@@ -5188,7 +5859,7 @@ function bossArmCut(en) {
   const sides = ['LEFT', 'RIGHT'].filter((s) => !player.arms[s].lost);
   if (!sides.length) {
     // 腕が無いなら普通の一撃として入る
-    player.hp = Math.max(0, player.hp - CONFIG.enemyDamageToPlayer);
+    damagePlayer(CONFIG.enemyDamageToPlayer);
     doFlash(0.4, '#ff3b30'); addShake(0.4);
     showFeedback('SLASHED', '#ff6b5e', 32);
     return;
@@ -5316,6 +5987,8 @@ function warpToBoss() {
   player.hp = CONFIG.playerMaxHp;
   player.arms.LEFT = makeArmState(ARM.FIST);
   player.arms.RIGHT = makeArmState(ARM.FIST);
+  player.skill = makeBodySkill();
+  clearAsuraArms();
   updateArmVisuals();
   playerPos.set((ARENA.gate.x0 + ARENA.gate.x1) / 2, 0, ARENA.z1 + 3.0);
   yaw = Math.PI; pitch = 0;
@@ -5583,6 +6256,9 @@ function resetAll() {
   player.resourceCharge = 0;
   player.arms.LEFT = makeArmState(ARM.FIST);
   player.arms.RIGHT = makeArmState(ARM.FIST);
+  player.skill = makeBodySkill();
+  clearAsuraArms();
+  clearHealFx();
   player.gunRecoil.LEFT = 0; player.gunRecoil.RIGHT = 0;
   gunHold.LEFT = false; gunHold.RIGHT = false; gunCool.LEFT = 0; gunCool.RIGHT = 0;
   mouseHold.LEFT = null; mouseHold.RIGHT = null;
@@ -5924,6 +6600,17 @@ const MANUAL_PAGES = [
       aText(180, 192, 'JUST DODGE!', { size: 15, col: C_COOL })),
   },
 
+  {
+    cat: '人間モード（拳）', title: 'ガード',
+    keys: [['Ctrl', '長押し']],
+    desc: '両腕を斜めに構えて受ける。受けるダメージは半分になり、体ではなく残っている腕それぞれに入る（両腕あれば両方に）。両腕とも無いと体に入る。構えている間は攻撃とキックは出せず、歩きも遅くなる。ドッジは出せる。',
+    art: () => aStage(
+      aEnemy(180, 1.0, {}) +
+      '<polygon points="64 214 92 196 236 112 222 98" fill="' + C_ARM + '" stroke="#0b0d10" stroke-width="2"/>' +
+      '<polygon points="296 214 268 196 124 112 138 98" fill="' + C_ARM + '" stroke="#0b0d10" stroke-width="2"/>' +
+      aText(180, 60, '-6 / -6', { size: 13, col: '#b8d4ee' }) + aKey(56, 44, 'Ctrl', true)),
+  },
+
   /* --- 銃腕 --- */
   {
     cat: '銃腕', title: '射撃',
@@ -6151,6 +6838,58 @@ const MANUAL_PAGES = [
       aText(220, 56, '[F] TAKE BODY', { size: 13, col: C_HI })),
   },
 
+  /* --- 体スキル --- */
+  {
+    cat: '体スキル', title: '体スキル',
+    keys: [['Z', '体ごとに1回']],
+    desc: '体ごとに1回だけ使えるスキル。使えるときは中央の体アイコンの縁が光り、絵がスキルの種類を表す。使うと光が消え、その体ではもう使えない。死体を乗っ取ると、その体のスキルが手に入る。',
+    art: () => aStage(
+      '<circle cx="180" cy="96" r="44" fill="none" stroke="' + C_HI + '" stroke-width="5" opacity="0.9"/>' +
+      '<circle cx="180" cy="96" r="52" fill="none" stroke="' + C_HI + '" stroke-width="2" opacity="0.35"/>' +
+      '<circle cx="180" cy="96" r="38" fill="#7fc4a0"/>' +
+      '<g transform="translate(152 68) scale(1.17)" fill="none" stroke="#f4f7f0" stroke-width="3"' +
+      ' stroke-linecap="round" stroke-linejoin="round">' + HUD_ICON.asura.replace(/class="f"/g, 'fill="#f4f7f0"') +
+      '</g>' + aKey(258, 70, 'Z', true) +
+      aText(180, 172, '[F] TAKE BODY  ASURA', { size: 12, col: C_HI })),
+  },
+  {
+    cat: '体スキル', title: '阿修羅（ASURA）',
+    keys: [['Z', '発動'], ['左右クリック', '追加の腕も続く']],
+    desc: '3時・2時／9時・10時の位置に腕が生えて6本腕になる。クリックした側の追加の腕も少し遅れて同じように攻撃する。追加の腕は生えたときの腕の種類のままで、ライジングで腕を交換しても変わらない。',
+    art: () => {
+      // 画面の左右の縁から、手先をクロスヘアへ向けて伸びる追加の腕
+      const extra = (x0, y0, x1, y1) =>
+        aLine(x0, y0, x1, y1, C_ARM, 16) +
+        aRect(x1 - 11, y1 - 11, 22, 22, C_ARM, ' rx="4" stroke="#0b0d10" stroke-width="2"');
+      return aStage(
+        aEnemy(180, 1.0, {}) + aBurst(180, 96, 0.9) +
+        extra(372, 92, 268, 88) + extra(360, 12, 262, 50) +
+        extra(-12, 92, 92, 88) + extra(0, 12, 98, 50) +
+        aArm('L', 'fist', 0.1) + aArm('R', 'fist', 1) +
+        aText(312, 120, '3', { size: 13, col: C_HI }) + aText(300, 30, '2', { size: 13, col: C_HI }) +
+        aText(48, 120, '9', { size: 13, col: C_HI }) + aText(60, 30, '10', { size: 13, col: C_HI }));
+    },
+  },
+  {
+    cat: '体スキル', title: '回復（HEAL）',
+    keys: [['Z', '発動']],
+    desc: '緑の光が立ちのぼり、体のHPを全回復する。',
+    art: () => {
+      let dots = '';
+      for (let i = 0; i < 16; i++) {
+        // 体のまわりに散らす（規則的に並ばないよう、ずらした正弦で置く）
+        const x = 180 + Math.sin(i * 2.4) * (40 + (i % 4) * 14), y = 150 - ((i * 47) % 100);
+        dots += '<circle cx="' + x + '" cy="' + y + '" r="' + (2 + (i % 3)) + '" fill="#7dffb0" opacity="0.8"/>';
+      }
+      return aStage(
+        '<rect width="360" height="200" fill="url(#hg)"/>' +
+        '<defs><radialGradient id="hg"><stop offset="55%" stop-color="#50ff96" stop-opacity="0"/>' +
+        '<stop offset="100%" stop-color="#3ce682" stop-opacity="0.45"/></radialGradient></defs>' +
+        dots + aArrow(180, 150, 180, 70, '#7dffb0', 4) +
+        aText(180, 182, 'HP 100', { size: 15, col: '#7fe0a6' }) + aKey(56, 44, 'Z', true));
+    },
+  },
+
   /* --- デバッグ --- */
   {
     cat: 'デバッグ', title: 'ボス戦へワープ',
@@ -6172,6 +6911,14 @@ const MANUAL_PAGES = [
       aEnemy(146, 0.62, { feet: 136 }) + aEnemy(212, 0.62, { feet: 136 }) +
       aText(180, 188, 'WAVE 1 / 5', { size: 13, col: C_HI }) +
       aKey(56, 44, 'V', true)),
+  },
+  {
+    cat: 'デバッグ', title: '体スキルの切り替え',
+    keys: [['4', '阿修羅'], ['5', '回復']],
+    desc: '今の体の体スキルを差し替えて未使用に戻す（検証用）。阿修羅で生えていた腕は消える。',
+    art: () => aStage(
+      aKey(130, 80, '4', true) + aText(130, 124, 'ASURA', { size: 13, col: C_HI }) +
+      aKey(230, 80, '5', true) + aText(230, 124, 'HEAL', { size: 13, col: '#7fe0a6' })),
   },
   {
     cat: 'デバッグ', title: 'リセット',
@@ -6492,6 +7239,7 @@ function animate() {
   worldTime += wdt;
 
   /* --- 入力（人間モード） --- */
+  updateGuard(rdt);
   for (const side of ['LEFT', 'RIGHT']) {
     if (gunCool[side] > 0) gunCool[side] -= rdt;
     if (player.gunRecoil[side] > 0) player.gunRecoil[side] = Math.max(0, player.gunRecoil[side] - rdt * 7);
@@ -6905,6 +7653,7 @@ function animate() {
     hand.quaternion.copy(camera.quaternion);
     hand.rotateX(-0.12 + punchOut * 0.2 + recoil * 0.35);
     hand.userData.fist.scale.setScalar(1);
+    applyGuardPose(hand, side);
 
     // --- フィニッシャー ---
     // 拳は敵の頭へ伸びて掴み、握り潰して戻る。
@@ -6941,6 +7690,10 @@ function animate() {
   }
   /* --- 触手腕の見た目（アイドルのうねり／薙ぎ払い／伸ばした触手）--- */
   updateTentacleArms(rdt);
+  /* --- 体スキル（阿修羅の追加の腕／回復の粒）--- */
+  updateAsuraArms(dt, rdt);
+  updateHealFx(rdt);
+  if (hudSkillFire > 0) hudSkillFire -= rdt;
 
   if (player.attack && player.attack.type === 'kick' && state === S.HUMAN) {
     const a = player.attack;
@@ -6982,7 +7735,7 @@ function animate() {
   updatePlayerHud();
 
   // デバッグHUD：キャンセル受付中かどうかも出す（タイミングの確認用）
-  ui.state.textContent = state +
+  ui.state.textContent = state + (player.guard ? '  [GUARD]' : '') +
     (state === S.HUMAN && player.attack
       ? (inCancelWindow() ? '  [CANCEL OK]' : '  [' + player.attack.type.toUpperCase() + ']')
       : '') +
