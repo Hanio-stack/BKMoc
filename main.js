@@ -8,6 +8,7 @@
      L/R Click 長押し パージ（手首射出・各腕1回のみ）
      Space            キック（リソース1／ジャストキック）
      Shift            ドッジ（ジャストドッジは消費なし＋1回復）
+     Ctrl 長押し      ガード（腕を斜めに構える。受けるダメージは半減して腕が受ける）
      ※全アクション（パンチ・パージ・キック・ドッジ・ライジング）は
        進行中のアクションをキャンセルして出せる。
        キャンセルできるのは近接の「振り抜き（アニメーションの攻撃終わり）」以降。
@@ -100,6 +101,14 @@
      乗っ取ると脊柱を首元に突き刺して装着し、その体で人間モードになる
      ライジング中は死体の腕にも□が出て、スタン中の敵と同じように斬って奪える
      （こちらも左クリックなら左手、右クリックなら右手に付く）
+
+   ダメージの受け方:
+     人間モードで敵から受けるダメージは体（中央）だけに入る。
+     腕のHPが減るのは自分で攻撃したとき（近接のヒット・射撃・触手）だけ。
+     ガード中（Ctrl）は受けるダメージを guardDamageMul 倍にして、残っている腕
+     それぞれに入れる（両腕あれば両方に同じ量）。体には入らない。
+     両腕とも無ければガードにならず、普通に体へ入る。
+     ガード中は攻撃・キックは出せない。ドッジは出せる（構えを解いて避ける）。
 
    体スキル（BODY SKILL・Z）:
      体ごとに1回だけ使えるスキルが付いている。使うとその体ではもう使えない（使い捨て）。
@@ -487,6 +496,11 @@ const CONFIG = {
                                //   これ以上伸ばすと、押していないパンチが
                                //   ドッジやフィニッシャーのあとに漏れて出る
 
+  /* --- ガード（Ctrl長押し）--- */
+  guardDamageMul: 0.5,         // ガード中に受けるダメージの倍率。これが残っている腕それぞれに入る
+  guardRaiseTime: 0.10,        // 構えるまで(s)。押した瞬間からガードは効く（見た目だけの補間）
+  guardMoveMul: 0.5,           // ガード中の移動速度の倍率
+
   /* --- キック / ドッジ --- */
   resourceMax: 3,
   resourceRegenTime: 3.0,
@@ -740,6 +754,7 @@ const player = {
   dodgeDir: new THREE.Vector3(),
   invuln: 0,
   stagger: 0,          // ボスのキックで潰されている時間。canCancelNow() が見る
+  guard: false,        // ガード中（Ctrl長押し）。updateGuard() が毎フレーム決める
 };
 
 const playerGroup = new THREE.Group();
@@ -1216,8 +1231,7 @@ function explodeCorpse(c) {
   if (dp <= r) {
     if (player.invuln > 0) {
       if (!inFinisher()) showFeedback('DODGE', '#9ce8ff', 24);
-    } else {
-      player.hp = Math.max(0, player.hp - CONFIG.corpseBurstDamagePlayer);
+    } else if (damagePlayer(CONFIG.corpseBurstDamagePlayer) === 'body') {
       doFlash(0.5, '#ff3b30');
       addShake(0.6);
       addHitstop(0.06);
@@ -1376,6 +1390,10 @@ const locked = () => document.pointerLockElement === renderer.domElement;
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
+  // Ctrl（ガード）を握ったまま押したキーをブラウザのショートカットにしない
+  // （Ctrl+D のブックマーク、Ctrl+S の保存など）。Ctrl+W だけはブラウザが
+  // 横取りできないので、下の beforeunload で閉じる前に確認を出す
+  if (e.ctrlKey && locked()) e.preventDefault();
   if (!locked() || e.repeat) return;
 
   // 操作説明を開いているあいだは、ページ送りと閉じる以外の入力を通さない
@@ -1469,6 +1487,7 @@ document.addEventListener('mousedown', (e) => {
     return;
   }
   if (state !== S.HUMAN) return;
+  if (player.guard) return;          // ガード中は殴れない（構えを解けば出る）
   const arm = player.arms[side];
   if (arm.lost) {
     // 本体の腕が無くても、阿修羅の追加の腕が残っていればそっちが殴る
@@ -1787,7 +1806,8 @@ function canMove() {
 }
 
 function moveSpeedNow() {
-  return (state === S.HEAD) ? CONFIG.headMoveSpeed : CONFIG.moveSpeed;
+  if (state === S.HEAD) return CONFIG.headMoveSpeed;
+  return CONFIG.moveSpeed * (player.guard ? CONFIG.guardMoveMul : 1);
 }
 
 function findTargetEnemy(range, angleDeg) {
@@ -1848,6 +1868,91 @@ function loseArm(side) {
 function noUsableArm() {
   return player.arms.LEFT.lost && player.arms.RIGHT.lost;
 }
+
+/* =========================================================
+   ガード（Ctrl長押し）と被ダメージ
+   体へのダメージ（敵の攻撃・死体の爆発・ボスのキック）は全部 damagePlayer() を通す。
+   ガード中は guardDamageMul 倍にして、残っている腕それぞれに同じ量を入れる。
+   体には入らない。両腕とも無ければガードにならず体へ入る。
+   頭モードの出血は体のHPそのものなのでここを通さない。
+   ========================================================= */
+let guardBlend = 0;        // 構えの見た目(0-1)
+let guardHitT = 0;         // ガードで受けた直後の腕の押し込み(s)
+
+function guardHeld() { return !!(keys.ControlLeft || keys.ControlRight); }
+
+// 毎フレーム、今ガードしているかを決める
+function updateGuard(rdt) {
+  let want = guardHeld() && state === S.HUMAN && player.hp > 0 && locked() && !manualOpen &&
+             player.dodgeT <= 0 && player.stagger <= 0 && !inFinisher() && !tentHold;
+  if (want && !player.guard && player.attack) {
+    // 出している攻撃は振り抜き以降ならキャンセルして構える。発生中は振り抜くまで待つ
+    if (canCancelNow()) cancelCurrentAction(); else want = false;
+  }
+  if (want && !player.guard) {
+    // 構えた瞬間に、握っていたクリック（長押し・連射・先行入力）を捨てる
+    punchBuffer = null;
+    mouseHold.LEFT = null; mouseHold.RIGHT = null;
+    gunHold.LEFT = false; gunHold.RIGHT = false;
+  }
+  player.guard = want;
+  const target = want ? 1 : 0;
+  const step = rdt / CONFIG.guardRaiseTime;
+  guardBlend = guardBlend < target ? Math.min(target, guardBlend + step) : Math.max(target, guardBlend - step);
+  if (guardHitT > 0) guardHitT = Math.max(0, guardHitT - rdt);
+}
+
+// 返り値: 'guard' = 腕が受けた / 'body' = 体（頭モードなら頭）が受けた
+function damagePlayer(amount) {
+  if (player.guard && state === S.HUMAN) {
+    const sides = ['LEFT', 'RIGHT'].filter((s) => !player.arms[s].lost);
+    if (sides.length) {
+      const dmg = amount * CONFIG.guardDamageMul;
+      // 先に出す。腕が壊れたときの「ARM GONE」が上に出るように
+      showFeedback('GUARD  -' + Math.round(dmg), '#b8d4ee', 28);
+      for (const s of sides) damageArm(s, dmg);
+      guardHitT = 0.22;
+      addHitstop(0.05);
+      addShake(0.18);
+      doFlash(0.18, '#9fc4e8');
+      return 'guard';
+    }
+  }
+  player.hp = Math.max(0, player.hp - amount);
+  return 'body';
+}
+
+// ガードの一人称の構え。両腕を斜めに倒して顔の前で交差させる。
+// dir は前腕の向き（カメラ基準）。左右で少しずらして X に重ねる
+const GUARD_POSE = {
+  // 交差点は画面の下寄り。顔の前に上げきると、構えたまま敵の動きが見えない
+  LEFT: { pos: [-0.34, -0.40, -0.42], dir: [0.85, 0.40, -0.35] },
+  RIGHT: { pos: [0.34, -0.36, -0.46], dir: [-0.85, 0.34, -0.40] },
+};
+const _gPos = new THREE.Vector3();
+const _gDir = new THREE.Vector3();
+const _gQ = new THREE.Quaternion();
+const _gFwd = new THREE.Vector3(0, 0, -1);
+function applyGuardPose(hand, side) {
+  if (guardBlend <= 0) return;
+  const g = guardBlend * guardBlend * (3 - 2 * guardBlend);
+  const P = GUARD_POSE[side];
+  _gDir.set(P.dir[0], P.dir[1], P.dir[2]).normalize();
+  // 受けた直後は腕ごと手前へ押し込まれる
+  _gPos.set(P.pos[0], P.pos[1] - guardHitT * 0.15, P.pos[2] + guardHitT * 0.35);
+  _gPos.applyQuaternion(camera.quaternion).add(camera.position);
+  _gQ.setFromUnitVectors(_gFwd, _gDir).premultiply(camera.quaternion);
+  hand.position.lerp(_gPos, g);
+  hand.quaternion.slerp(_gQ, g);
+}
+
+// Ctrl+W（タブを閉じる）はページから止められない。ガードしながら前進すると
+// 押してしまうので、遊んでいる間はブラウザに「閉じますか？」を出させる
+window.addEventListener('beforeunload', (e) => {
+  if (!locked()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 /* =========================================================
    銃腕
@@ -1996,7 +2101,7 @@ function doKick() {
   // そのパンチの発生ぶんキックがさらに遅れる（先行入力が防御を殺す）
   punchBuffer = null;
   // 振り抜き以降のパンチ／キックは上書きできる。発生中とフィニッシャーは不可
-  if (!canCancelNow()) return;
+  if (!canCancelNow() || player.guard) return;   // ガード中はキックも出さない
   if (player.resource < 1) { showFeedback('NO RESOURCE', '#8b8f88', 22); return; }
   cancelCurrentAction();
   player.resource -= 1;
@@ -2553,7 +2658,7 @@ function hitPlayer(en) {
     if (!inFinisher()) showFeedback('DODGE', '#9ce8ff', 24);  // 掴み中の無敵は無言
     return;
   }
-  player.hp = Math.max(0, player.hp - (CONFIG.enemyDamageToPlayer + (en.bonusDamage || 0)));
+  if (damagePlayer(CONFIG.enemyDamageToPlayer + (en.bonusDamage || 0)) === 'guard') return;
   doFlash(0.4, '#ff3b30');
   addShake(0.3);
   addHitstop(0.05);
@@ -4256,6 +4361,8 @@ function updateTentacleArms(rdt) {
     const holding = !!(tentHold && tentHold.side === side) ||
                     !!(tentFin && tentFin.side === side);
     if (holding) out = CONFIG.tentIdleOut * 0.45;
+    // ガード中も引っ込める。腕を横に倒すと触手が画面を横切って前が見えない
+    out *= 1 - 0.55 * guardBlend;
     animateHandTentacles(hand, sideBias, breath, out, arc, step, et);
   }
 
@@ -5634,6 +5741,11 @@ function updateBossState(en, wdt) {
   if (en.kickCd > 0) en.kickCd -= wdt;
   if (en.riseCd > 0) en.riseCd -= wdt;
 
+  // ボス戦が始まっていない（リセット直後・ハブ・デモ中）あいだは何もしない。
+  // ダクトの男は enemies に入ったまま、見えない状態でアリーナの奥に退避している。
+  // ここで止めないと通常の敵AIに落ち、部屋判定(room)も無いのでプレイヤーを
+  // どこまでも追ってきて、見えないまま殴ってくる（リセットから約40秒後に届く）
+  if (BOSS.phase === 'IDLE') return true;
   if (en.state === E.HIDDEN) return true;              // 死体のフリ。何もしない
   if (en.state === E.FLEE) { updateBossFlee(en, wdt); return true; }
 
@@ -5705,7 +5817,7 @@ function bossKickHit(en) {
   player.attack = null;
   punchBuffer = null;
   player.stagger = CONFIG.bossKickStagger;
-  player.hp = Math.max(0, player.hp - CONFIG.bossKickDamage);
+  damagePlayer(CONFIG.bossKickDamage);
   const away = new THREE.Vector3(playerPos.x - en.group.position.x, 0, playerPos.z - en.group.position.z);
   if (away.lengthSq() > 0.001) playerPos.addScaledVector(away.normalize(), 1.1);
   addHitstop(0.14); addShake(0.55);
@@ -5725,7 +5837,7 @@ function bossArmCut(en) {
   const sides = ['LEFT', 'RIGHT'].filter((s) => !player.arms[s].lost);
   if (!sides.length) {
     // 腕が無いなら普通の一撃として入る
-    player.hp = Math.max(0, player.hp - CONFIG.enemyDamageToPlayer);
+    damagePlayer(CONFIG.enemyDamageToPlayer);
     doFlash(0.4, '#ff3b30'); addShake(0.4);
     showFeedback('SLASHED', '#ff6b5e', 32);
     return;
@@ -6466,6 +6578,17 @@ const MANUAL_PAGES = [
       aText(180, 192, 'JUST DODGE!', { size: 15, col: C_COOL })),
   },
 
+  {
+    cat: '人間モード（拳）', title: 'ガード',
+    keys: [['Ctrl', '長押し']],
+    desc: '両腕を斜めに構えて受ける。受けるダメージは半分になり、体ではなく残っている腕それぞれに入る（両腕あれば両方に）。両腕とも無いと体に入る。構えている間は攻撃とキックは出せず、歩きも遅くなる。ドッジは出せる。',
+    art: () => aStage(
+      aEnemy(180, 1.0, {}) +
+      '<polygon points="64 214 92 196 236 112 222 98" fill="' + C_ARM + '" stroke="#0b0d10" stroke-width="2"/>' +
+      '<polygon points="296 214 268 196 124 112 138 98" fill="' + C_ARM + '" stroke="#0b0d10" stroke-width="2"/>' +
+      aText(180, 60, '-6 / -6', { size: 13, col: '#b8d4ee' }) + aKey(56, 44, 'Ctrl', true)),
+  },
+
   /* --- 銃腕 --- */
   {
     cat: '銃腕', title: '射撃',
@@ -7094,6 +7217,7 @@ function animate() {
   worldTime += wdt;
 
   /* --- 入力（人間モード） --- */
+  updateGuard(rdt);
   for (const side of ['LEFT', 'RIGHT']) {
     if (gunCool[side] > 0) gunCool[side] -= rdt;
     if (player.gunRecoil[side] > 0) player.gunRecoil[side] = Math.max(0, player.gunRecoil[side] - rdt * 7);
@@ -7507,6 +7631,7 @@ function animate() {
     hand.quaternion.copy(camera.quaternion);
     hand.rotateX(-0.12 + punchOut * 0.2 + recoil * 0.35);
     hand.userData.fist.scale.setScalar(1);
+    applyGuardPose(hand, side);
 
     // --- フィニッシャー ---
     // 拳は敵の頭へ伸びて掴み、握り潰して戻る。
@@ -7588,7 +7713,7 @@ function animate() {
   updatePlayerHud();
 
   // デバッグHUD：キャンセル受付中かどうかも出す（タイミングの確認用）
-  ui.state.textContent = state +
+  ui.state.textContent = state + (player.guard ? '  [GUARD]' : '') +
     (state === S.HUMAN && player.attack
       ? (inCancelWindow() ? '  [CANCEL OK]' : '  [' + player.attack.type.toUpperCase() + ']')
       : '') +
