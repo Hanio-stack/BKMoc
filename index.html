@@ -29,6 +29,9 @@
 <!-- ライジングモード表示 -->
 <div id="risingLabel" class="hidden">RISING</div>
 
+<!-- 回復スキルの画面の縁の緑 -->
+<div id="healOverlay"></div>
+
 <!-- 汎用フラッシュ -->
 <div id="flash"></div>
 
@@ -53,18 +56,21 @@
 <!-- プレイヤーステータス（左右下＝腕 / 中央下＝体・頭 ＋ リソース） -->
 <div id="playerHud">
   <div class="hud-slot arm" id="slotArmL">
-    <div class="hp-circle" id="circleArmL"><i class="fill"></i><span class="num">100</span></div>
+    <div class="hp-circle" id="circleArmL"><i class="fill"></i><span class="icon"></span></div>
     <div class="slot-tag" id="tagArmL">FIST</div>
   </div>
 
   <div class="hud-slot core" id="slotCore">
     <div class="slot-tag" id="tagCore">BODY</div>
-    <div class="hp-circle" id="circleCore"><i class="fill"></i><span class="num">100</span></div>
+    <!-- 体スキルが使えるときだけ縁が光る（Zで使うと消える）-->
+    <div class="skill-ring" id="skillRing"></div>
+    <div class="hp-circle" id="circleCore"><i class="fill"></i><span class="icon"></span></div>
+    <div class="skill-key" id="skillKey">Z</div>
     <div id="resPips"></div>
   </div>
 
   <div class="hud-slot arm" id="slotArmR">
-    <div class="hp-circle" id="circleArmR"><i class="fill"></i><span class="num">100</span></div>
+    <div class="hp-circle" id="circleArmR"><i class="fill"></i><span class="icon"></span></div>
     <div class="slot-tag" id="tagArmR">FIST</div>
   </div>
 </div>
