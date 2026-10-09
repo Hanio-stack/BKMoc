@@ -9,6 +9,8 @@
      Space            キック（リソース1／ジャストキック）
      Shift            ドッジ（ジャストドッジは消費なし＋1回復）
      Ctrl 長押し      ガード（腕を斜めに構える。受けるダメージは半減して腕が受ける）
+                      ※開始のクリックで全画面になり、Ctrl+W などのブラウザの
+                        ショートカットはゲームが受け取る（Chrome / Edge）
      ※全アクション（パンチ・パージ・キック・ドッジ・ライジング）は
        進行中のアクションをキャンセルして出せる。
        キャンセルできるのは近接の「振り抜き（アニメーションの攻撃終わり）」以降。
@@ -1526,7 +1528,27 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 const startOverlay = document.getElementById('startOverlay');
-startOverlay.addEventListener('click', () => renderer.domElement.requestPointerLock());
+// 開始と同時に全画面にして、キーボードをロックする。
+// Ctrl+W（タブを閉じる）・Ctrl+T・Ctrl+N などはブラウザが先に取ってしまい、
+// 普段はページから止められない。全画面中だけ Keyboard Lock でページに渡してもらえる
+// （Chrome / Edge）。ガード（Ctrl）を握ったまま WASD で歩けるようにするため。
+// Escape はロックしない＝これまでどおり ESC でマウスと全画面が解除される
+const LOCK_KEYS = [
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyR', 'KeyT', 'KeyN', 'KeyF', 'KeyG',
+  'KeyB', 'KeyV', 'KeyZ', 'KeyX', 'KeyC', 'Tab', 'Space',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
+];
+startOverlay.addEventListener('click', () => {
+  const root = document.documentElement;
+  if (!document.fullscreenElement && root.requestFullscreen) {
+    root.requestFullscreen().then(() => {
+      if (navigator.keyboard && navigator.keyboard.lock) {
+        navigator.keyboard.lock(LOCK_KEYS).catch(() => {});
+      }
+    }).catch(() => {});   // 全画面を断られても普通に遊べる（Ctrl+W だけ確認ダイアログで守る）
+  }
+  renderer.domElement.requestPointerLock();
+});
 document.addEventListener('pointerlockchange', () => {
   startOverlay.classList.toggle('hidden', locked());
   if (!locked() && manualOpen) closeManual();
@@ -1946,8 +1968,8 @@ function applyGuardPose(hand, side) {
   hand.quaternion.slerp(_gQ, g);
 }
 
-// Ctrl+W（タブを閉じる）はページから止められない。ガードしながら前進すると
-// 押してしまうので、遊んでいる間はブラウザに「閉じますか？」を出させる
+// 全画面にできなかった（断られた・Keyboard Lock の無いブラウザ）ときの保険。
+// Ctrl+W がページに届かないので、遊んでいる間はブラウザに「閉じますか？」を出させる
 window.addEventListener('beforeunload', (e) => {
   if (!locked()) return;
   e.preventDefault();
