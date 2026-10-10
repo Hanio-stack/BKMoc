@@ -25,7 +25,7 @@
      Z                体スキル（体ごとに1回だけ。下の「体スキル」参照）
      ※キック／ドッジのリソース（青い丸）の数は体ごとに 2〜6 のランダム。
        死体を乗っ取るとその体の数になる（満タンで始まる）。最初の体だけ3つ。
-       自分が捨てた体は数も残りもそのまま残る。死体の TAKE BODY に数が出る
+       自分が捨てた体は数も残りもそのまま残る。死体側には数を出さない（乗り移るまで分からない）
      F                落ちている/浮いている腕と交換
      G                リセット
      Tab              今の目的を左上に表示／もう一度押すと消える
@@ -1131,14 +1131,6 @@ function createCorpse(x, z, rotY, opts) {
   }
   const skill = opts.skill ? Object.assign({}, opts.skill) : makeBodySkill();
   const resMax = opts.resMax || randomBodyResource();
-  const prompt = document.createElement('div');
-  prompt.className = 'chest-prompt hidden';
-  // 文字は出さない。Fキーと、体スキルの絵（HUDと同じ）とリソースの数の点だけ。
-  // 絵は HUD_ICON がまだ定義される前に呼ばれることがあるので、最初に表示するときに入れる
-  prompt.innerHTML = '<span class="key">F</span>' +
-    '<span class="skill-ico' + (skill.used ? ' used' : '') + '"></span>' +
-    '<span class="res-tag">' + '<i></i>'.repeat(resMax) + '</span>';
-  document.body.appendChild(prompt);
 
   // 爆発が近いことを体ぜんぶで示すため、死体のマテリアルを集めておく。
   // 死体ごとに new しているので、ここを書き換えても他の死体には影響しない。
@@ -1151,7 +1143,7 @@ function createCorpse(x, z, rotY, opts) {
   });
 
   const c = {
-    group, body, neck, stump, el, prompt, arms, armPivots, armEls, blinkMats, blinkBase,
+    group, body, neck, stump, el, arms, armPivots, armEls, blinkMats, blinkBase,
     fuse: (typeof opts.fuse === 'number') ? opts.fuse : null,
     // hp が数値なら「中古の体」。乗っ取ってもこのHPまでしか戻らない。
     // 敵の死体や最初から置いてある体は null ＝ 全快の新品
@@ -1355,7 +1347,6 @@ function removeCorpse(c) {
   scene.remove(c.group);
   c.el.remove();
   for (const key of ['LEFT', 'RIGHT']) if (c.armEls[key]) c.armEls[key].remove();
-  c.prompt.remove();
   const i = corpses.indexOf(c);
   if (i >= 0) corpses.splice(i, 1);
 }
@@ -5046,27 +5037,23 @@ function updateTargets() {
   }
 }
 
-/* ---------- 死体の[F]プロンプト ---------- */
+/* ---------- 頭モード：乗り移れる死体の□ ----------
+   ライジングと同じ首元の□（青）を、Fで乗り移れる一番近い死体にだけ出す。
+   体スキルやリソースの数は出さない（どの体が当たりかは乗り移るまで分からない）。
+   ライジング中の□は updateTargets() が出すので、ここでは頭モードだけ扱う        */
 const _cPos = new THREE.Vector3();
 function updateCorpseUi() {
-  // 頭モード：一番近い死体だけに出す / ライジング：□で選択中のものに出す
+  if (state !== S.HEAD) return;
   const nearby = findCorpseNearby();
-  const picked = (selectedTarget && selectedTarget.kind === 'corpse') ? selectedTarget.corpse : null;
   for (const c of corpses) {
-    const show = (c === nearby) || (c === picked);
-    if (!show) { c.prompt.classList.add('hidden'); continue; }
+    if (c !== nearby) { c.el.classList.add('hidden'); continue; }
     c.neck.getWorldPosition(_cPos);
-    _cPos.y += 0.30;
     const scr = projectToScreen(_cPos);
-    if (!scr.front) { c.prompt.classList.add('hidden'); continue; }
-    if (!c.promptIcon) {
-      c.promptIcon = true;
-      c.prompt.querySelector('.skill-ico').innerHTML =
-        '<svg viewBox="0 0 48 48">' + HUD_ICON[c.skill.kind] + '</svg>';
-    }
-    c.prompt.classList.remove('hidden');
-    c.prompt.style.left = scr.x + 'px';
-    c.prompt.style.top = scr.y + 'px';
+    if (!scr.front) { c.el.classList.add('hidden'); continue; }
+    c.el.classList.remove('hidden');
+    c.el.classList.add('selected');
+    c.el.style.left = scr.x + 'px';
+    c.el.style.top = scr.y + 'px';
   }
 }
 
@@ -6869,12 +6856,12 @@ const MANUAL_PAGES = [
   {
     cat: '頭モード', title: '死体に乗り移る',
     keys: [['F', '死体に近づいて']],
-    desc: '近くの死体にFで乗り移ると、その体で人間モードに戻る。死体が持っている腕がそのまま自分の腕になる。',
+    desc: '近くの死体の首元に□が出たら、Fで乗り移るとその体で人間モードに戻る。死体が持っている腕がそのまま自分の腕になる。',
     art: () => aStage(
       aCorpse(220, 1.1) +
       aHeadForm(120, 140, 0.9) +
       aArrow(148, 128, 198, 112, C_HI, 3) +
-      aText(220, 56, '[F] TAKE BODY', { size: 13, col: C_HI })),
+      aSquare(220, 128, 28, '#b8e8ff')),
   },
 
   /* --- 体スキル --- */
@@ -6888,8 +6875,7 @@ const MANUAL_PAGES = [
       '<circle cx="180" cy="96" r="38" fill="#7fc4a0"/>' +
       '<g transform="translate(152 68) scale(1.17)" fill="none" stroke="#f4f7f0" stroke-width="3"' +
       ' stroke-linecap="round" stroke-linejoin="round">' + HUD_ICON.asura.replace(/class="f"/g, 'fill="#f4f7f0"') +
-      '</g>' + aKey(258, 70, 'Z', true) +
-      aText(180, 172, '[F] TAKE BODY  ASURA', { size: 12, col: C_HI })),
+      '</g>' + aKey(258, 70, 'Z', true)),
   },
   {
     cat: '体スキル', title: '阿修羅（ASURA）',
@@ -7198,7 +7184,7 @@ scene.add(rackGroup);
   RACK.signWorld.set(RACK.signX, 2.18, RACK.z + 0.05);
 }
 
-// 看板の[F]プロンプト（死体の胸元と同じ見た目）
+// 看板の[F]プロンプト
 const signPrompt = document.createElement('div');
 signPrompt.className = 'chest-prompt hidden';
 signPrompt.innerHTML = '<span class="key">F</span>';
@@ -7237,8 +7223,10 @@ function updateRack(rdt) {
     } else sl.group.scale.setScalar(1);
   }
 
-  // 看板の[F]。人間モードと頭モードのときだけ出す
-  const show = !manualOpen && signInRange() && (state === S.HUMAN || state === S.HEAD);
+  // 看板の[F]。人間モードと頭モードのときだけ出す。
+  // 頭モードで死体の□が出ているときは F が死体に使われるので出さない
+  const show = !manualOpen && signInRange() &&
+    (state === S.HUMAN || (state === S.HEAD && !findCorpseNearby()));
   if (!show) { signPrompt.classList.add('hidden'); return; }
   const scr = projectToScreen(RACK.signWorld);
   if (!scr.front) { signPrompt.classList.add('hidden'); return; }
