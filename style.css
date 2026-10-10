@@ -13,13 +13,17 @@ html, body {
 canvas { display: block; }
 .hidden { display: none !important; }
 
-/* ---- デバッグHUD ---- */
+/* ---- 左上（目的）とデバッグHUD ----
+   目的はコンパスの左に置く。横幅が足りない画面ではコンパスとボスHUDの下へ逃がす */
 #topLeft {
   position: fixed; top: 14px; left: 16px;
   display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
   z-index: 20; pointer-events: none;
 }
+/* デバッグHUD（STATE / Room など）は表示しない。main.js は更新し続けるので、
+   見たいときはこの display:none を消せば戻る */
 #hud {
+  display: none;
   font-size: 13px; line-height: 1.7; letter-spacing: 0.05em;
   color: #cfe3c8; text-shadow: 0 0 6px rgba(120, 200, 120, 0.25);
   z-index: 20; pointer-events: none;
@@ -133,7 +137,7 @@ canvas { display: block; }
   mix-blend-mode: screen;
 }
 #slowLabel {
-  position: fixed; top: 100px; left: 50%;
+  position: fixed; top: 140px; left: 50%;
   transform: translateX(-50%);
   font-size: 20px; letter-spacing: 0.9em; padding-left: 0.9em;
   color: rgba(180, 225, 240, 0.9);
@@ -143,7 +147,7 @@ canvas { display: block; }
 
 /* ---- ライジングモード表示 ---- */
 #risingLabel {
-  position: fixed; top: 132px; left: 50%;
+  position: fixed; top: 168px; left: 50%;
   transform: translateX(-50%);
   font-size: 20px; letter-spacing: 0.9em; padding-left: 0.9em;
   color: rgba(255, 226, 150, 0.92);
@@ -175,7 +179,7 @@ canvas { display: block; }
 
 /* ---- 判定フィードバック ---- */
 #feedback {
-  position: fixed; top: 32%; left: 50%;
+  position: fixed; top: max(32%, 230px); left: 50%;   /* 上のRISING表示とかぶらない高さ */
   transform: translate(-50%, -50%);
   font-size: 34px; letter-spacing: 0.18em; font-weight: bold;
   z-index: 21; pointer-events: none; opacity: 0; white-space: nowrap;
@@ -187,19 +191,33 @@ canvas { display: block; }
    体HPの下にドッジ・キックのリソースが横並びで、左から減る。
    画面中央下は字幕の場所なので、中央（体）だけ上げてある。
    左右の腕は元の高さのまま（中心のyは揃っていない）。                    */
+/* 丸は --hud-scale 倍で描く（中身ごと拡大）。低い画面では中央に届かないよう少し控える */
+:root {
+  --hud-scale: 2;
+  /* 中央（体の丸＋ドッジのリソース）だけ腕より少し小さく */
+  --core-scale: calc(var(--hud-scale) * 0.85);
+}
+@media (max-height: 760px) { :root { --hud-scale: 1.6; } }
+@media (max-height: 620px) { :root { --hud-scale: 1.3; } }
+
 #playerHud { pointer-events: none; }
 
 .hud-slot {
   position: fixed; bottom: 100px;
   width: 64px; height: 64px;
   z-index: 20; pointer-events: none;
+  transform: scale(var(--hud-scale));
 }
-#slotArmL { left: 46px; }
-#slotArmR { right: 46px; }
+/* 腕は画面の角を基準に拡大する（内側・上へ広がる） */
+#slotArmL { left: 46px; transform-origin: left bottom; }
+#slotArmR { right: 46px; transform-origin: right bottom; }
 #slotCore {
-  /* 中央だけ72px。字幕の上に出すため腕より24px高い（中心y 156 / 腕は 132） */
-  left: 50%; margin-left: -36px; bottom: 120px;
+  /* 中央だけ72px。下端を基準に拡大し、丸の下のリソース（26px×倍率）が
+     字幕（画面いちばん下の2行ぶん）にかからない高さに置く */
+  left: 50%; margin-left: -36px; bottom: calc(94px + 26px * var(--core-scale));
   width: 72px; height: 72px;
+  transform: scale(var(--core-scale));
+  transform-origin: center bottom;
 }
 /* 頭モードでは腕がない */
 #playerHud.head .hud-slot.arm { display: none; }
@@ -368,7 +386,7 @@ canvas { display: block; }
 
 /* ---- ボス戦（ダクトの男）---- */
 #bossHud {
-  position: fixed; top: 60px; left: 50%;
+  position: fixed; top: 100px; left: 50%;
   transform: translateX(-50%);
   width: 520px; max-width: 60vw;
   z-index: 19; pointer-events: none;
@@ -409,7 +427,7 @@ canvas { display: block; }
 
 /* ---- デモステージのウェーブ表示 ---- */
 #demoHud {
-  position: fixed; top: 60px; left: 50%;
+  position: fixed; top: 100px; left: 50%;
   transform: translateX(-50%);
   display: flex; gap: 18px; align-items: baseline;
   padding: 6px 16px;
@@ -441,25 +459,31 @@ canvas { display: block; }
 
 /* ---- 目的（Tabで開閉・左上）---- */
 #objective {
-  min-width: 200px; max-width: 260px;
-  padding: 9px 14px 8px;
+  min-width: 400px; max-width: min(560px, 90vw);
+  padding: 18px 28px 16px;
   background: linear-gradient(to right, rgba(0, 0, 0, 0.66), rgba(0, 0, 0, 0.32));
-  border-left: 3px solid #ff6b6b;
+  border-left: 6px solid #ff6b6b;
   animation: objIn 0.18s ease-out;
 }
 @keyframes objIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
-.obj-label { font-size: 11px; letter-spacing: 0.28em; color: rgba(255, 140, 130, 0.9); }
+.obj-label { font-size: 22px; letter-spacing: 0.28em; color: rgba(255, 140, 130, 0.9); }
 #objectiveText {
-  margin-top: 3px;
-  font-size: 15px; letter-spacing: 0.04em; line-height: 1.5;
+  margin-top: 6px;
+  font-size: 34px; letter-spacing: 0.04em; line-height: 1.4;
   color: #eef1ea; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
-.obj-hint { margin-top: 4px; font-size: 10px; letter-spacing: 0.14em; color: rgba(200, 205, 195, 0.45); }
+.obj-hint { margin-top: 8px; font-size: 18px; letter-spacing: 0.14em; color: rgba(200, 205, 195, 0.45); }
+
+/* 目的とコンパス（見た目720px）が横に並ばない幅では、目的をボスHUDの下へ */
+@media (max-width: 1599px) { #topLeft { top: 146px; } }
+@media (min-width: 1600px) { #objective { max-width: min(560px, calc(50vw - 380px)); } }
 
 /* ---- コンパス（上中央）---- */
 #compass {
   position: fixed; top: 12px; left: 50%;
-  transform: translateX(-50%);
+  /* 中身ごと2倍。見た目の幅は 720px（狭い画面では 80vw）、高さ 72px */
+  transform: translateX(-50%) scale(2);
+  transform-origin: center top;
   width: 360px; max-width: 40vw; height: 36px;
   background: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.5) 18%,
               rgba(0, 0, 0, 0.5) 82%, rgba(0, 0, 0, 0));
