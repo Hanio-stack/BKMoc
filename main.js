@@ -126,7 +126,7 @@
                        左右のクリックで攻撃すると、同じ側の追加の腕も少し遅れて同じ攻撃を出す。
                        追加の腕は生えたときの腕の種類をコピーし、以後ライジングで腕を
                        交換しても変わらない。耐久は腕ごとに減るが、HUDには出さない。
-       回復（HEAL）    緑のエフェクトとともに体のHPを全回復する。
+       回復（HEAL）    緑のエフェクトとともに体と腕のHPを全回復する（失った腕は戻らない）。
 
    部屋（ROOMS）:
      敵は自分の部屋にプレイヤーがいる間だけ追う。出れば追うのをやめて
@@ -4521,7 +4521,8 @@ function updateTentacleArms(rdt) {
      交換しても変わらない（本体の腕が無ければ拳が生える）。
 
    回復（HEAL）:
-     緑の光の粒が立ちのぼり、画面の縁が緑に光って、体のHPを全回復する。
+     緑の光の粒が立ちのぼり、画面の縁が緑に光って、体と腕のHPを全回復する。
+     失った腕（LOST）は戻らない。
    ========================================================= */
 // 一人称の追加の腕の置き場所（右側。左は x を反転）。カメラ基準のローカル座標。
 // 根元は画面の外に置き、手首から先だけが画面の端から中央へ向かって伸びる
@@ -4842,6 +4843,11 @@ const healGeo = new THREE.SphereGeometry(1, 8, 6);
 function castHeal() {
   const before = player.hp;
   player.hp = CONFIG.playerMaxHp;
+  // 腕のHPも全回復する。失った腕（LOST）は戻らない＝残っている腕だけ
+  for (const side of ['LEFT', 'RIGHT']) {
+    const st = player.arms[side];
+    if (!st.lost) st.hp = CONFIG.armMaxHp;
+  }
   spawnHealFx();
   healOverlayT = CONFIG.healFxTime;
   doFlash(0.30, '#7dffb0');
@@ -6906,7 +6912,7 @@ const MANUAL_PAGES = [
   {
     cat: '体スキル', title: '回復（HEAL）',
     keys: [['Z', '発動']],
-    desc: '緑の光が立ちのぼり、体のHPを全回復する。',
+    desc: '緑の光が立ちのぼり、体と腕のHPを全回復する。失った腕は戻らない。',
     art: () => {
       let dots = '';
       for (let i = 0; i < 16; i++) {
