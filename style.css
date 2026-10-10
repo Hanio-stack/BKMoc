@@ -94,12 +94,19 @@ canvas { display: block; }
 .enemy-bars .eb.hp > i { background: #cf4a44; }
 .enemy-bars .eb.stun > i { background: #ffd75e; }
 .enemy-bars .state {
-  font-size: 9px; letter-spacing: 0.08em; text-align: center;
-  color: rgba(220, 225, 215, 0.75); text-shadow: 0 0 4px #000;
+  /* 状態は文字ではなく、バーの下の小さな菱形の色で出す */
+  width: 8px; height: 8px; margin: 3px auto 0;
+  transform: rotate(45deg);
+  background: transparent;
 }
-.enemy-bars .state.windup { color: #ffb45e; }
-.enemy-bars .state.active { color: #ff5e5e; }
-.enemy-bars .state.stunned { color: #ffe98a; }
+.enemy-bars .state.windup { background: #ffb45e; box-shadow: 0 0 6px rgba(255, 180, 94, 0.8); }
+/* ジャストの瞬間（旧 WINDUP*）：白く大きく光る */
+.enemy-bars .state.just {
+  width: 12px; height: 12px; margin-top: 1px;
+  background: #fff; box-shadow: 0 0 10px #fff, 0 0 18px rgba(255, 200, 120, 0.9);
+}
+.enemy-bars .state.active { background: #ff5e5e; box-shadow: 0 0 6px rgba(255, 94, 94, 0.8); }
+.enemy-bars .state.stunned { background: #ffe98a; box-shadow: 0 0 6px rgba(255, 233, 138, 0.8); }
 
 /* ---- 胸元のインタラクトボタン ---- */
 .chest-prompt {
@@ -121,13 +128,20 @@ canvas { display: block; }
   padding: 0 5px;
   font-weight: bold;
 }
-/* 乗っ取れる体の体スキル */
-.chest-prompt .skill-tag {
-  margin-left: 4px; padding: 0 5px;
-  background: rgba(255, 215, 94, 0.22);
-  border-radius: 3px;
+/* 乗っ取れる体の体スキル（HUDと同じ絵）。使用済みは薄く */
+.chest-prompt .skill-ico { display: inline-flex; width: 20px; height: 20px; color: #ffe98a; }
+.chest-prompt .skill-ico > svg {
+  width: 100%; height: 100%;
+  fill: none; stroke: currentColor; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round;
 }
-.chest-prompt .skill-tag.used { opacity: 0.45; text-decoration: line-through; }
+.chest-prompt .skill-ico .f { fill: currentColor; stroke: none; }
+.chest-prompt .skill-ico.used { opacity: 0.35; }
+/* 乗っ取れる体のリソースの数（青い丸の数） */
+.chest-prompt .res-tag { display: inline-flex; gap: 3px; margin-left: 2px; }
+.chest-prompt .res-tag > i {
+  display: block; width: 7px; height: 7px; border-radius: 50%;
+  background: #6fb6d8; box-shadow: 0 0 4px rgba(110, 180, 215, 0.7);
+}
 
 /* ---- スロー演出 ---- */
 #slowOverlay {
@@ -136,39 +150,6 @@ canvas { display: block; }
   background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(40,90,110,0.28) 100%);
   mix-blend-mode: screen;
 }
-#slowLabel {
-  position: fixed; top: 140px; left: 50%;
-  transform: translateX(-50%);
-  font-size: 20px; letter-spacing: 0.9em; padding-left: 0.9em;
-  color: rgba(180, 225, 240, 0.9);
-  text-shadow: 0 0 12px rgba(120, 200, 230, 0.6);
-  z-index: 20; pointer-events: none;
-}
-
-/* ---- ライジングモード表示 ---- */
-#risingLabel {
-  position: fixed; top: 168px; left: 50%;
-  transform: translateX(-50%);
-  font-size: 20px; letter-spacing: 0.9em; padding-left: 0.9em;
-  color: rgba(255, 226, 150, 0.92);
-  text-shadow: 0 0 12px rgba(255, 190, 90, 0.6);
-  z-index: 20; pointer-events: none;
-}
-/* 頭が潰れた状態。自機が画面から消えるので、ここだけが手掛かりになる */
-#risingLabel.dead {
-  color: #ff7a68;
-  text-shadow: 0 0 14px rgba(255, 60, 40, 0.7);
-  animation: deadPulse 0.9s ease-in-out infinite;
-}
-#risingLabel.dead::after {
-  content: "[G] RESET";
-  display: block;
-  margin-top: 10px;
-  font-size: 12px; letter-spacing: 0.3em; padding-left: 0.3em;
-  color: rgba(255, 180, 165, 0.8);
-  text-shadow: none;
-}
-@keyframes deadPulse { 0%, 100% { opacity: 0.75; } 50% { opacity: 1; } }
 
 /* ---- フラッシュ ---- */
 #flash {
@@ -178,12 +159,6 @@ canvas { display: block; }
 }
 
 /* ---- 判定フィードバック ---- */
-#feedback {
-  position: fixed; top: max(32%, 230px); left: 50%;   /* 上のRISING表示とかぶらない高さ */
-  transform: translate(-50%, -50%);
-  font-size: 34px; letter-spacing: 0.18em; font-weight: bold;
-  z-index: 21; pointer-events: none; opacity: 0; white-space: nowrap;
-}
 
 /* ---- プレイヤーHUD ----
    左右下＝腕HP / 中央下＝体HP（頭モードでは頭HP）。
@@ -282,15 +257,6 @@ canvas { display: block; }
 .hp-circle.lost { border-style: dashed; border-color: rgba(255, 255, 255, 0.12); }
 .hp-circle.lost > .icon { color: #ff8f7a; }
 
-.slot-tag {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  font-size: 10px; letter-spacing: 0.16em; white-space: nowrap;
-  color: rgba(200, 205, 195, 0.55);
-  text-shadow: 0 0 6px #000;
-}
-.hud-slot.arm .slot-tag { bottom: -16px; }
-#tagCore { top: -18px; color: rgba(200, 225, 210, 0.6); }
-#tagCore.used { color: rgba(200, 205, 195, 0.35); text-decoration: line-through; }
 
 /* ---- 体スキル：使えるあいだ体の丸の縁が光る（OWのウルトのイメージ）----
    金色の輪＋外側のにじみ＋輪の上を回る光。使うと弾けて消える */
@@ -357,7 +323,6 @@ canvas { display: block; }
   background: radial-gradient(ellipse at center, rgba(80, 255, 150, 0) 45%,
               rgba(80, 255, 150, 0.22) 75%, rgba(60, 230, 130, 0.55) 100%);
 }
-#playerHud.head #tagCore { color: rgba(255, 150, 130, 0.85); }
 
 /* リソース（ドッジ／キック）。体の丸の下に中央ぞろえ、左から減る */
 #resPips {
@@ -382,7 +347,6 @@ canvas { display: block; }
   display: block; height: 0;
   background: rgba(110, 180, 215, 0.45);
 }
-#resPips.muted { opacity: 0.28; }        /* 頭モード＝キックもドッジも出せない */
 
 /* ---- ボス戦（ダクトの男）---- */
 #bossHud {
@@ -391,12 +355,6 @@ canvas { display: block; }
   width: 520px; max-width: 60vw;
   z-index: 19; pointer-events: none;
 }
-.boss-top {
-  display: flex; justify-content: space-between; align-items: baseline;
-  font-size: 12px; letter-spacing: 0.22em; margin-bottom: 6px;
-}
-#bossName { color: #7fd8ec; text-shadow: 0 0 10px rgba(80, 200, 230, 0.5); }
-#bossRound { color: rgba(200, 205, 195, 0.55); letter-spacing: 0.16em; }
 #bossBar {
   height: 10px;
   background: rgba(0, 0, 0, 0.6);
@@ -425,19 +383,6 @@ canvas { display: block; }
 }
 @keyframes countPulse { 0%, 100% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.14); } }
 
-/* ---- デモステージのウェーブ表示 ---- */
-#demoHud {
-  position: fixed; top: 100px; left: 50%;
-  transform: translateX(-50%);
-  display: flex; gap: 18px; align-items: baseline;
-  padding: 6px 16px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 210, 120, 0.28);
-  font-size: 13px; letter-spacing: 0.22em;
-  z-index: 19; pointer-events: none;
-}
-#demoWave { color: #ffd75e; text-shadow: 0 0 10px rgba(255, 200, 90, 0.45); }
-#demoLeft { color: rgba(200, 205, 195, 0.6); letter-spacing: 0.16em; }
 
 /* 字幕（画面中央下）。「話者：せりふ」の話者だけ色を変える */
 #subtitle {
@@ -466,13 +411,11 @@ canvas { display: block; }
   animation: objIn 0.18s ease-out;
 }
 @keyframes objIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
-.obj-label { font-size: 22px; letter-spacing: 0.28em; color: rgba(255, 140, 130, 0.9); }
 #objectiveText {
   margin-top: 6px;
   font-size: 34px; letter-spacing: 0.04em; line-height: 1.4;
   color: #eef1ea; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
-.obj-hint { margin-top: 8px; font-size: 18px; letter-spacing: 0.14em; color: rgba(200, 205, 195, 0.45); }
 
 /* 目的とコンパス（見た目720px）が横に並ばない幅では、目的をボスHUDの下へ */
 @media (max-width: 1599px) { #topLeft { top: 146px; } }
@@ -525,7 +468,6 @@ canvas { display: block; }
 /* 読んでいるあいだは戦闘中のUIを引っ込める（デバッグHUDは残す） */
 body.manual-on #crosshair,
 body.manual-on #playerHud,
-body.manual-on #feedback,
 body.manual-on #compass { display: none; }
 
 #manual {

@@ -23,6 +23,9 @@
        あとから出ると判定がずれる。先行入力の対象にしていない。
      Q 長押し        ライジング（いつでも可）
      Z                体スキル（体ごとに1回だけ。下の「体スキル」参照）
+     ※キック／ドッジのリソース（青い丸）の数は体ごとに 2〜6 のランダム。
+       死体を乗っ取るとその体の数になる（満タンで始まる）。最初の体だけ3つ。
+       自分が捨てた体は数も残りもそのまま残る。死体の TAKE BODY に数が出る
      F                落ちている/浮いている腕と交換
      G                リセット
      Tab              今の目的を左上に表示／もう一度押すと消える
@@ -508,7 +511,11 @@ const CONFIG = {
   guardMoveMul: 0.5,           // ガード中の移動速度の倍率
 
   /* --- キック / ドッジ --- */
-  resourceMax: 3,
+  // リソースの数（青い丸）は体ごとに違う。乗っ取った体で resourceMin〜resourceMax の
+  // ランダム（本番は死体ごとに設定する想定）。最初の体だけ resourceStart で固定
+  resourceStart: 3,
+  resourceMin: 2,
+  resourceMax: 6,
   resourceRegenTime: 3.0,
   kickStartup: 0.12,
   kickRecover: 0.35,
@@ -695,21 +702,6 @@ for (const r of ROOMS) {
     m.position.set(x, 0.125, z);
     scene.add(m);
   }
-  // 名前を床に描く
-  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
-  const ctx = cv.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.fillRect(0, 0, 512, 128);
-    ctx.font = 'bold 72px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(200,205,195,0.55)';
-    ctx.fillText(r.name, 256, 64);
-    const tex = new THREE.CanvasTexture(cv);
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(4, 1),
-      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
-    label.rotation.x = -Math.PI / 2;
-    label.position.set((r.x0 + r.x1) / 2, 0.02, r.z1 - 1.2);   // 入口側（+Z）に置く
-    scene.add(label);
-  }
 }
 
 /* ---------- 色 ---------- */
@@ -742,6 +734,11 @@ const SKILL_LABEL = { asura: 'ASURA', heal: 'HEAL' };
 function makeBodySkill(kind) {
   return { kind: kind || SKILL_LIST[Math.floor(Math.random() * SKILL_LIST.length)], used: false };
 }
+// 体のリソース（ドッジ／キック）の数。体スキルと同じく体ごとに決まる
+function randomBodyResource() {
+  return CONFIG.resourceMin +
+    Math.floor(Math.random() * (CONFIG.resourceMax - CONFIG.resourceMin + 1));
+}
 
 /* ---------- プレイヤー ---------- */
 const playerPos = new THREE.Vector3(0, 0, 6);
@@ -749,7 +746,8 @@ let yaw = 0, pitch = 0;
 
 const player = {
   hp: CONFIG.playerMaxHp,
-  resource: CONFIG.resourceMax,
+  resource: CONFIG.resourceStart,
+  resMax: CONFIG.resourceStart,       // 今の体のリソースの数（体ごとに違う）
   resourceCharge: 0,
   arms: { LEFT: makeArmState(ARM.FIST), RIGHT: makeArmState(ARM.FIST) },
   skill: makeBodySkill(),             // 今の体の体スキル
@@ -1022,7 +1020,7 @@ function buildEnemyUi(enemy) {
   const bars = document.createElement('div');
   bars.className = 'enemy-bars';
   bars.innerHTML =
-    '<div class="eb hp"><i></i></div><div class="eb stun"><i></i></div><div class="state">IDLE</div>';
+    '<div class="eb hp"><i></i></div><div class="eb stun"><i></i></div><div class="state"></div>';
   document.body.appendChild(bars);
   enemy.ui = {
     root: bars,
@@ -1046,6 +1044,8 @@ const CORPSE_SPOTS = [[-3, 2, 0.8], [3, 1, -1.2], [-1, 10, 2.4]];   // どの部
 //         null は欠けている（斬って奪った腕）。省略時はフルHPの拳
 //   fuse: 爆発までの秒数（ワールド時間）。null なら爆発しない
 //   skill: 体スキル { kind, used }。省略時はランダム（自分が捨てた体は使用済みかも引き継ぐ）
+//   resMax: リソースの数。省略時は resourceMin〜resourceMax のランダム
+//   resource: 乗っ取ったときの残り。省略時は満タン（自分が捨てた体だけ捨てた時点の残り）
 //   extraArms: 阿修羅の追加の腕（自分が捨てた体だけ）。乗っ取り直すと生え直す
 function createCorpse(x, z, rotY, opts) {
   opts = opts || {};
@@ -1130,11 +1130,14 @@ function createCorpse(x, z, rotY, opts) {
     armEls[key] = ae;
   }
   const skill = opts.skill ? Object.assign({}, opts.skill) : makeBodySkill();
+  const resMax = opts.resMax || randomBodyResource();
   const prompt = document.createElement('div');
   prompt.className = 'chest-prompt hidden';
-  // 体スキルの種類も出す。どの体を取るかを選ぶ材料になる
-  prompt.innerHTML = '<span class="key">F</span><span>TAKE BODY</span>' +
-    '<span class="skill-tag' + (skill.used ? ' used' : '') + '">' + SKILL_LABEL[skill.kind] + '</span>';
+  // 文字は出さない。Fキーと、体スキルの絵（HUDと同じ）とリソースの数の点だけ。
+  // 絵は HUD_ICON がまだ定義される前に呼ばれることがあるので、最初に表示するときに入れる
+  prompt.innerHTML = '<span class="key">F</span>' +
+    '<span class="skill-ico' + (skill.used ? ' used' : '') + '"></span>' +
+    '<span class="res-tag">' + '<i></i>'.repeat(resMax) + '</span>';
   document.body.appendChild(prompt);
 
   // 爆発が近いことを体ぜんぶで示すため、死体のマテリアルを集めておく。
@@ -1154,6 +1157,8 @@ function createCorpse(x, z, rotY, opts) {
     // 敵の死体や最初から置いてある体は null ＝ 全快の新品
     hp: (typeof opts.hp === 'number') ? opts.hp : null,
     skill,
+    resMax,
+    resource: (typeof opts.resource === 'number') ? Math.min(resMax, opts.resource) : resMax,
     extraArms: opts.extraArms || null,
     blinkPhase: 0,
   };
@@ -1575,10 +1580,7 @@ const ui = {
   arms: document.getElementById('hudArms'),
   enemy: document.getElementById('hudEnemy'),
   slowOverlay: document.getElementById('slowOverlay'),
-  slowLabel: document.getElementById('slowLabel'),
-  risingLabel: document.getElementById('risingLabel'),
   flash: document.getElementById('flash'),
-  feedback: document.getElementById('feedback'),
   hud: document.getElementById('playerHud'),
   resPips: document.getElementById('resPips'),
   // 丸アイコン（左右腕 / 中央＝体・頭）。fill は上から下へ減る
@@ -1586,11 +1588,6 @@ const ui = {
     LEFT: document.getElementById('circleArmL'),
     RIGHT: document.getElementById('circleArmR'),
     CORE: document.getElementById('circleCore'),
-  },
-  tags: {
-    LEFT: document.getElementById('tagArmL'),
-    RIGHT: document.getElementById('tagArmR'),
-    CORE: document.getElementById('tagCore'),
   },
 };
 // 丸の中身（fill / アイコン）を引きやすいようにまとめておく
@@ -1648,12 +1645,18 @@ function setHudIcon(c, key) {
   c.iconKey = key;
   c.icon.innerHTML = '<svg viewBox="0 0 48 48">' + HUD_ICON[key] + '</svg>';
 }
+// リソースの丸。数は体ごとに違うので、体が変わったら作り直す（中央ぞろえは CSS の flex）
 const pips = [];
-for (let i = 0; i < CONFIG.resourceMax; i++) {
-  const p = document.createElement('div');
-  p.className = 'pip'; p.innerHTML = '<i></i>';
-  ui.resPips.appendChild(p); pips.push(p);
+function buildPips(n) {
+  if (pips.length === n) return;
+  while (pips.length > n) pips.pop().remove();
+  while (pips.length < n) {
+    const p = document.createElement('div');
+    p.className = 'pip'; p.innerHTML = '<i></i>';
+    ui.resPips.appendChild(p); pips.push(p);
+  }
 }
+buildPips(player.resMax);
 
 /* ---------- プレイヤーHUD ----------
    左右下＝腕HP、中央下＝体HP（頭モードでは頭HP）。丸は上から下へ減る。
@@ -1677,8 +1680,6 @@ function updatePlayerHud() {
   ui.skillRing.classList.toggle('on', ready);
   ui.skillKey.classList.toggle('on', ready);
   ui.skillRing.classList.toggle('fire', hudSkillFire > 0 && !headMode);
-  ui.tags.CORE.textContent = headMode ? 'HEAD' : (sk ? SKILL_LABEL[sk.kind] : 'BODY');
-  ui.tags.CORE.classList.toggle('used', !headMode && !!sk && sk.used);
 
   // --- 腕（頭モードでは丸ごと非表示なので更新だけしておく）---
   for (const side of ['LEFT', 'RIGHT']) {
@@ -1695,12 +1696,11 @@ function updatePlayerHud() {
     c.el.classList.toggle('gun', isGun && !st.lost);
     c.el.classList.toggle('tent', isTent && !st.lost);
     c.el.classList.toggle('low', !st.lost && st.hp <= CONFIG.armHitCost);
-    ui.tags[side].textContent = st.lost ? 'LOST'
-      : (isGun ? 'GUN' : (isTent ? 'TENT' : (st.purged ? 'PURGED' : 'FIST')));
   }
 
   // --- リソース：左から減る（残りは右詰め）---
-  const firstFull = CONFIG.resourceMax - player.resource;
+  buildPips(player.resMax);
+  const firstFull = player.resMax - player.resource;
   for (let i = 0; i < pips.length; i++) {
     const full = i >= firstFull;
     const charging = (i === firstFull - 1);
@@ -1708,7 +1708,8 @@ function updatePlayerHud() {
     pips[i].firstChild.style.height = charging
       ? (player.resourceCharge / CONFIG.resourceRegenTime * 100) + '%' : '0%';
   }
-  ui.resPips.classList.toggle('muted', headMode);
+  // 頭モードではキックもドッジも出せないので、リソースの丸ごと出さない
+  ui.resPips.classList.toggle('hidden', headMode);
 }
 
 /* ---------- 字幕（画面中央下）----------
@@ -1746,14 +1747,10 @@ function updateSubtitle(rdt) {
 }
 
 /* ---------- 演出ヘルパ ---------- */
-let feedbackTimer = 0;
-function showFeedback(text, color, size) {
-  ui.feedback.textContent = text;
-  ui.feedback.style.color = color || '#e8e4da';
-  ui.feedback.style.fontSize = (size || 34) + 'px';
-  ui.feedback.style.opacity = '1';
-  feedbackTimer = 0.8;
-}
+// 状況を文字で伝えるポップアップ（RISING / NEW BODY / BODY BURST など）は出さない方針。
+// 指示のない文字は画面に出さない（ローカライズの手間を増やさない）。
+// 呼び出し側はそのまま残してあるので、デバッグで見たいときはここに表示処理を戻す
+function showFeedback() {}
 let flashTimer = 0, flashPower = 0;
 function doFlash(power, color) {
   flashPower = power; flashTimer = 0.18;
@@ -2170,7 +2167,7 @@ function doKick() {
   cancelCurrentAction();
   player.resource -= 1;
   // ジャストかどうかは「押した瞬間」で確定させる。
-  // 発生(kickStartup 0.12s)を待ってから見ると、HUDの WINDUP* と
+  // 発生(kickStartup 0.12s)を待ってから見ると、敵の頭上の白い印（ジャスト）と
   // 正解タイミングが 0.12s ずれ、「表示を見てから押す」と間に合わなくなる。
   // ドッジ側は即時に見ているので、これで両方の正解が揃う。
   const justHits = new Set();
@@ -2189,7 +2186,7 @@ function doDodge() {
   if (!just && player.resource < 1) { showFeedback('NO RESOURCE', '#8b8f88', 22); return; }
   cancelCurrentAction();
   if (just) {
-    player.resource = Math.min(CONFIG.resourceMax, player.resource + 1);
+    player.resource = Math.min(player.resMax, player.resource + 1);
     slowTimer = CONFIG.justDodgeSlowTime;
     slowScaleOverride = CONFIG.justDodgeSlowScale;
     showFeedback('JUST DODGE!', '#9ce8ff', 38);
@@ -2909,6 +2906,7 @@ function enterHeadMode() {
     arms: { LEFT: cloneArmState(player.arms.LEFT), RIGHT: cloneArmState(player.arms.RIGHT) },
     fuse: CONFIG.corpseFuse, hp: player.hp,
     skill: player.skill,                 // 使用済みかどうかも体と一緒に残る
+    resMax: player.resMax, resource: player.resource,   // リソースの数と残りも体に残る
     extraArms: stashAsuraArms(),         // 阿修羅の腕は体に付いたまま（拾い直すと生え直す）
   });
   // 頭は後ろへ跳ぶ。同じ座標のままだと自分の死体の中に埋まり、
@@ -3070,6 +3068,10 @@ function finishPossess() {
   }
   // 体スキルも体と一緒に入れ替わる。阿修羅を使った自分の体なら腕も生え直す
   player.skill = Object.assign({}, c.skill);
+  // リソースの数も体ごと。新しい体は満タン、自分が捨てた体は捨てた時点の残り
+  player.resMax = c.resMax;
+  player.resource = c.resource;
+  player.resourceCharge = 0;
   clearAsuraArms();
   if (c.extraArms) spawnAsuraArms(c.extraArms);
   player.gunRecoil.LEFT = 0; player.gunRecoil.RIGHT = 0;
@@ -5051,6 +5053,11 @@ function updateCorpseUi() {
     _cPos.y += 0.30;
     const scr = projectToScreen(_cPos);
     if (!scr.front) { c.prompt.classList.add('hidden'); continue; }
+    if (!c.promptIcon) {
+      c.promptIcon = true;
+      c.prompt.querySelector('.skill-ico').innerHTML =
+        '<svg viewBox="0 0 48 48">' + HUD_ICON[c.skill.kind] + '</svg>';
+    }
     c.prompt.classList.remove('hidden');
     c.prompt.style.left = scr.x + 'px';
     c.prompt.style.top = scr.y + 'px';
@@ -5077,11 +5084,11 @@ function updateEnemyUi() {
       en.ui.root.style.top = scr.y + 'px';
       en.ui.hp.style.width = (en.hp / en.maxHp * 100) + '%';
       en.ui.stun.style.width = (en.stun / CONFIG.enemyStunThreshold * 100) + '%';
-      let label = en.state;
-      if (en.state === E.WINDUP && isJustTiming(en)) label = 'WINDUP*';
-      en.ui.state.textContent = label;
+      // 状態は文字ではなく色の印で出す。予備動作＝橙、ジャストの瞬間＝白く光る、
+      // 攻撃中＝赤、スタン＝黄。それ以外は印を消す
+      const just = (en.state === E.WINDUP && isJustTiming(en));
       en.ui.state.className = 'state' +
-        (en.state === E.WINDUP ? ' windup' : en.state === E.ACTIVE ? ' active' :
+        (just ? ' just' : en.state === E.WINDUP ? ' windup' : en.state === E.ACTIVE ? ' active' :
          en.state === E.STUNNED ? ' stunned' : '');
     } else en.ui.root.classList.add('hidden');
   }
@@ -5304,7 +5311,6 @@ function bossRng(seed) {
 const bossUi = {
   hud: document.getElementById('bossHud'),
   bar: document.getElementById('bossBarFill'),
-  round: document.getElementById('bossRound'),
   count: document.getElementById('bossCount'),
   scare: document.getElementById('scareVignette'),
 };
@@ -5508,7 +5514,6 @@ function beginRound(idx, preempt, burst) {
   en.rig.riseK = 0;
   setEnemyState(en, E.IDLE);
   bossUi.hud.classList.remove('hidden');
-  bossUi.round.textContent = 'ROUND ' + BOSS.round + ' / 3';
 
   // かくれんぼ明けは開幕に部屋の死体をほとんど爆散させる。
   // 派手さと、腕・体の補給を絞る目的。第1ラウンドは死体だらけのまま戦わせる
@@ -5598,10 +5603,8 @@ function updateBossFlee(en, wdt) {
       en.fleeStage = 'gone';
       if (BOSS.phase === 'CLEAR') {
         bossUi.hud.classList.add('hidden');
-        say('ダクトの男は完全に逃げた —— ボス戦終了 / [B] でもう一度', 6.0);
       } else {
         BOSS.phase = 'WAIT';
-        say('頭モード（Q長押し → Space）でダクトを抜けろ', 6.0);
       }
     }
   }
@@ -6020,7 +6023,6 @@ function warpToBoss() {
   playerPos.set((ARENA.gate.x0 + ARENA.gate.x1) / 2, 0, ARENA.z1 + 3.0);
   yaw = Math.PI; pitch = 0;
   showFeedback('DUCT MAN', '#59e0ff', 40);
-  say('入口の赤いラインを越えると始まる', 3.4);
 }
 
 createBossMan();
@@ -6194,7 +6196,6 @@ function demoClearWave() {
   DEMO.phase = (DEMO.next >= DEMO_WAVES.length) ? 'CLEAR' : 'OPEN';
   if (DEMO.phase === 'CLEAR') {
     showFeedback('ALL CLEAR', '#9ce8ff', 46);
-    say('突き当りまで。[G] でハブへ戻る', 4.0);
   } else {
     showFeedback('GATE OPEN', '#9ce8ff', 34);
   }
@@ -6212,7 +6213,6 @@ function startDemo() {
   DEMO.phase = 'OPEN';
   DEMO.next = 0; DEMO.wave = -1; DEMO.lockZ = null;
   showFeedback('DEMO STAGE', '#ffd75e', 42);
-  say('前へ進め。湧いた敵を倒すまで奥の門は開かない', 3.6);
 }
 
 function demoStop() {
@@ -6221,7 +6221,6 @@ function demoStop() {
   DEMO.active = false; DEMO.phase = 'IDLE';
   DEMO.next = 0; DEMO.wave = -1; DEMO.lockZ = null;
   for (const g of DEMO.gates) g.visible = false;
-  demoUi.hud.classList.add('hidden');
 }
 
 // デモは自分の矩形だけで閉じている。ハブの歩ける矩形とは繋がっていない
@@ -6233,11 +6232,7 @@ function demoConfine() {
 }
 
 /* ---------- 毎フレーム ---------- */
-const demoUi = {
-  hud: document.getElementById('demoHud'),
-  wave: document.getElementById('demoWave'),
-  left: document.getElementById('demoLeft'),
-};
+// ウェーブ数などの文字表示は出さない（指示のない文字は出さない方針）
 
 function updateDemo(wdt) {
   if (!DEMO.active) return;
@@ -6267,19 +6262,14 @@ function updateDemo(wdt) {
     }
     if (demoLiveCount() === 0) demoClearWave();
   }
-
-  demoUi.hud.classList.remove('hidden');
-  demoUi.wave.textContent = (DEMO.phase === 'CLEAR')
-    ? 'ALL CLEAR'
-    : 'WAVE ' + (Math.max(0, DEMO.wave) + 1) + ' / ' + DEMO_WAVES.length;
-  demoUi.left.textContent = (DEMO.phase === 'FIGHT') ? demoLiveCount() + ' LEFT' : 'ADVANCE';
 }
 
 /* ---------- リセット ---------- */
 function resetAll() {
   demoStop();          // デモの敵を消してから。enemies の並びを ENEMY_SPOTS に戻す
   player.hp = CONFIG.playerMaxHp;
-  player.resource = CONFIG.resourceMax;
+  player.resMax = CONFIG.resourceStart;
+  player.resource = player.resMax;
   player.resourceCharge = 0;
   player.arms.LEFT = makeArmState(ARM.FIST);
   player.arms.RIGHT = makeArmState(ARM.FIST);
@@ -6574,8 +6564,7 @@ const MANUAL_PAGES = [
       aArrow(196, 47, 214, 47, C_HI, 2) +
       aKey(70, 150, 'Tab', true) +
       aRect(110, 128, 150, 44, 'rgba(0,0,0,0.6)') + aRect(110, 128, 3, 44, '#ff6b6b') +
-      '<text x="122" y="145" fill="#ff8c82" font-size="10" letter-spacing="2">OBJECTIVE</text>' +
-      '<text x="122" y="163" fill="#eef1ea" font-size="13">ゴールを目指す</text>'),
+      '<text x="122" y="155" fill="#eef1ea" font-size="13">ゴールを目指す</text>'),
   },
 
   /* --- 人間モード（拳） --- */
@@ -6612,7 +6601,7 @@ const MANUAL_PAGES = [
   {
     cat: '人間モード（拳）', title: 'キック',
     keys: [['Space', '']],
-    desc: 'リソースを1消費する蹴り。敵の攻撃予備動作（WINDUP*）に合わせて出すとジャストキックになる。腕を使わないので、両腕を失っても出せる。',
+    desc: 'リソースを1消費する蹴り。敵の攻撃予備動作で、頭上の印が白く光った瞬間に出すとジャストキックになる。腕を使わないので、両腕を失っても出せる。',
     art: () => aStage(
       aEnemy(180, 1.0, {}) + aBurst(180, 120, 0.9) +
       '<polygon points="200 216 240 206 212 128 186 136" fill="' + C_LEG +
@@ -6633,11 +6622,11 @@ const MANUAL_PAGES = [
   },
   {
     cat: '人間モード（拳）', title: 'ジャストドッジ',
-    keys: [['Shift', 'WINDUP* に合わせて']],
-    desc: '敵のHUDが WINDUP* になった瞬間にドッジすると成立。リソースを消費せず逆に1回復し、短いスローがかかる。',
+    keys: [['Shift', '白い印に合わせて']],
+    desc: '敵の頭上の印が白く光った瞬間にドッジすると成立。リソースを消費せず逆に1回復し、短いスローがかかる。',
     art: () => aStage(
       aEnemy(180, 0.95, { feet: 164 }) +
-      aText(180, 48, 'WINDUP*', { size: 14, col: '#ffb45e' }) +
+      '<rect x="174" y="40" width="12" height="12" fill="#fff" transform="rotate(45 180 46)"/>' +
       '<rect x="0" y="0" width="360" height="200" fill="' + C_COOL + '" opacity="0.07"/>' +
       '<circle cx="182" cy="156" r="10" fill="' + C_ARM + '"/>' +
       aArrow(172, 182, 112, 182, C_COOL, 3) +
@@ -7206,7 +7195,7 @@ scene.add(rackGroup);
 // 看板の[F]プロンプト（死体の胸元と同じ見た目）
 const signPrompt = document.createElement('div');
 signPrompt.className = 'chest-prompt hidden';
-signPrompt.innerHTML = '<span class="key">F</span><span>操作説明</span>';
+signPrompt.innerHTML = '<span class="key">F</span>';
 document.body.appendChild(signPrompt);
 
 function signInRange() {
@@ -7456,7 +7445,7 @@ function animate() {
   if (state === S.POSSESS && possess) updatePossess(rdt);
   if (legSwing) { legSwing.t += rdt; if (legSwing.t >= CONFIG.spiderSwingTime) legSwing = null; }
 
-  if (player.resource < CONFIG.resourceMax) {
+  if (player.resource < player.resMax) {
     player.resourceCharge += dt;
     if (player.resourceCharge >= CONFIG.resourceRegenTime) { player.resourceCharge = 0; player.resource++; }
   } else player.resourceCharge = 0;
@@ -7865,13 +7854,7 @@ function animate() {
 
   const risingActive = inRising && risingBlend > 0.25;
   ui.slowOverlay.classList.toggle('hidden', !(risingActive || slowTimer > 0));
-  ui.slowLabel.classList.toggle('hidden', !(risingActive || slowTimer > 0));
-  ui.risingLabel.classList.toggle('hidden', !(risingActive || headMode));
-  // 頭が潰れると頭・脊柱・脚が全部消えるので、常設の死亡表示がないと
-  // 「何が起きたか」が画面から完全に消える
-  ui.risingLabel.textContent = (state === S.POSSESS) ? 'POSSESS'
-    : (headMode ? (headDead ? 'DEAD' : 'HEAD') : 'RISING');
-  ui.risingLabel.classList.toggle('dead', headMode && headDead);
+  // SLOW / RISING / HEAD / DEAD などのモード名は出さない（スローは画面の縁の色で伝える）
 
 
   if (flashTimer > 0) {
@@ -7879,10 +7862,6 @@ function animate() {
     ui.flash.style.opacity = String(Math.max(0, flashTimer / 0.18) * flashPower);
   } else ui.flash.style.opacity = '0';
 
-  if (feedbackTimer > 0) {
-    feedbackTimer -= rdt;
-    ui.feedback.style.opacity = String(Math.min(1, feedbackTimer / 0.35));
-  } else ui.feedback.style.opacity = '0';
 
   updatePlayerHud();
   updateSubtitle(rdt);
