@@ -11,9 +11,7 @@
 <!-- 左上：目的（Tabで開閉）とデバッグHUD。縦に積むので目的を開くとデバッグHUDが下へずれる -->
 <div id="topLeft">
 <div id="objective" class="hidden">
-  <div class="obj-label">OBJECTIVE</div>
   <div id="objectiveText">-</div>
-  <div class="obj-hint">[TAB] で閉じる</div>
 </div>
 
 <!-- デバッグHUD -->
@@ -40,8 +38,6 @@
 <!-- スロー演出 -->
 <div id="slowOverlay" class="hidden"></div>
 
-<!-- 頭が潰れたときの表示（DEAD / [G] RESET）。モード名の常設表示は出さない -->
-<div id="risingLabel" class="hidden">DEAD</div>
 
 <!-- 回復スキルの画面の縁の緑 -->
 <div id="healOverlay"></div>
@@ -49,23 +45,15 @@
 <!-- 汎用フラッシュ -->
 <div id="flash"></div>
 
-<!-- 判定フィードバック -->
-<div id="feedback"></div>
 
 <!-- ボス戦（ダクトの男） -->
 <div id="scareVignette"></div>
 <div id="bossHud" class="hidden">
-  <div class="boss-top"><span id="bossName">DUCT MAN</span><span id="bossRound">ROUND 1 / 3</span></div>
   <div id="bossBar"><i id="bossBarFill"></i></div>
 </div>
 <div id="bossCount" class="hidden">10.0</div>
 <div id="subtitle" class="hidden"></div>
 
-<!-- デモステージ（一本道のウェーブ戦） -->
-<div id="demoHud" class="hidden">
-  <span id="demoWave">WAVE 1 / 5</span>
-  <span id="demoLeft">ADVANCE</span>
-</div>
 
 <!-- プレイヤーステータス（左右下＝腕 / 中央下＝体・頭 ＋ リソース） -->
 <div id="playerHud">

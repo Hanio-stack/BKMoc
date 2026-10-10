@@ -702,21 +702,6 @@ for (const r of ROOMS) {
     m.position.set(x, 0.125, z);
     scene.add(m);
   }
-  // 名前を床に描く
-  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
-  const ctx = cv.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.fillRect(0, 0, 512, 128);
-    ctx.font = 'bold 72px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(200,205,195,0.55)';
-    ctx.fillText(r.name, 256, 64);
-    const tex = new THREE.CanvasTexture(cv);
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(4, 1),
-      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
-    label.rotation.x = -Math.PI / 2;
-    label.position.set((r.x0 + r.x1) / 2, 0.02, r.z1 - 1.2);   // 入口側（+Z）に置く
-    scene.add(label);
-  }
 }
 
 /* ---------- 色 ---------- */
@@ -1035,7 +1020,7 @@ function buildEnemyUi(enemy) {
   const bars = document.createElement('div');
   bars.className = 'enemy-bars';
   bars.innerHTML =
-    '<div class="eb hp"><i></i></div><div class="eb stun"><i></i></div><div class="state">IDLE</div>';
+    '<div class="eb hp"><i></i></div><div class="eb stun"><i></i></div><div class="state"></div>';
   document.body.appendChild(bars);
   enemy.ui = {
     root: bars,
@@ -1148,9 +1133,10 @@ function createCorpse(x, z, rotY, opts) {
   const resMax = opts.resMax || randomBodyResource();
   const prompt = document.createElement('div');
   prompt.className = 'chest-prompt hidden';
-  // 体スキルの種類とリソースの数も出す。どの体を取るかを選ぶ材料になる
-  prompt.innerHTML = '<span class="key">F</span><span>TAKE BODY</span>' +
-    '<span class="skill-tag' + (skill.used ? ' used' : '') + '">' + SKILL_LABEL[skill.kind] + '</span>' +
+  // 文字は出さない。Fキーと、体スキルの絵（HUDと同じ）とリソースの数の点だけ。
+  // 絵は HUD_ICON がまだ定義される前に呼ばれることがあるので、最初に表示するときに入れる
+  prompt.innerHTML = '<span class="key">F</span>' +
+    '<span class="skill-ico' + (skill.used ? ' used' : '') + '"></span>' +
     '<span class="res-tag">' + '<i></i>'.repeat(resMax) + '</span>';
   document.body.appendChild(prompt);
 
@@ -1594,9 +1580,7 @@ const ui = {
   arms: document.getElementById('hudArms'),
   enemy: document.getElementById('hudEnemy'),
   slowOverlay: document.getElementById('slowOverlay'),
-  risingLabel: document.getElementById('risingLabel'),
   flash: document.getElementById('flash'),
-  feedback: document.getElementById('feedback'),
   hud: document.getElementById('playerHud'),
   resPips: document.getElementById('resPips'),
   // 丸アイコン（左右腕 / 中央＝体・頭）。fill は上から下へ減る
@@ -1724,7 +1708,8 @@ function updatePlayerHud() {
     pips[i].firstChild.style.height = charging
       ? (player.resourceCharge / CONFIG.resourceRegenTime * 100) + '%' : '0%';
   }
-  ui.resPips.classList.toggle('muted', headMode);
+  // 頭モードではキックもドッジも出せないので、リソースの丸ごと出さない
+  ui.resPips.classList.toggle('hidden', headMode);
 }
 
 /* ---------- 字幕（画面中央下）----------
@@ -1762,14 +1747,10 @@ function updateSubtitle(rdt) {
 }
 
 /* ---------- 演出ヘルパ ---------- */
-let feedbackTimer = 0;
-function showFeedback(text, color, size) {
-  ui.feedback.textContent = text;
-  ui.feedback.style.color = color || '#e8e4da';
-  ui.feedback.style.fontSize = (size || 34) + 'px';
-  ui.feedback.style.opacity = '1';
-  feedbackTimer = 0.8;
-}
+// 状況を文字で伝えるポップアップ（RISING / NEW BODY / BODY BURST など）は出さない方針。
+// 指示のない文字は画面に出さない（ローカライズの手間を増やさない）。
+// 呼び出し側はそのまま残してあるので、デバッグで見たいときはここに表示処理を戻す
+function showFeedback() {}
 let flashTimer = 0, flashPower = 0;
 function doFlash(power, color) {
   flashPower = power; flashTimer = 0.18;
@@ -2186,7 +2167,7 @@ function doKick() {
   cancelCurrentAction();
   player.resource -= 1;
   // ジャストかどうかは「押した瞬間」で確定させる。
-  // 発生(kickStartup 0.12s)を待ってから見ると、HUDの WINDUP* と
+  // 発生(kickStartup 0.12s)を待ってから見ると、敵の頭上の白い印（ジャスト）と
   // 正解タイミングが 0.12s ずれ、「表示を見てから押す」と間に合わなくなる。
   // ドッジ側は即時に見ているので、これで両方の正解が揃う。
   const justHits = new Set();
@@ -5072,6 +5053,11 @@ function updateCorpseUi() {
     _cPos.y += 0.30;
     const scr = projectToScreen(_cPos);
     if (!scr.front) { c.prompt.classList.add('hidden'); continue; }
+    if (!c.promptIcon) {
+      c.promptIcon = true;
+      c.prompt.querySelector('.skill-ico').innerHTML =
+        '<svg viewBox="0 0 48 48">' + HUD_ICON[c.skill.kind] + '</svg>';
+    }
     c.prompt.classList.remove('hidden');
     c.prompt.style.left = scr.x + 'px';
     c.prompt.style.top = scr.y + 'px';
@@ -5098,11 +5084,11 @@ function updateEnemyUi() {
       en.ui.root.style.top = scr.y + 'px';
       en.ui.hp.style.width = (en.hp / en.maxHp * 100) + '%';
       en.ui.stun.style.width = (en.stun / CONFIG.enemyStunThreshold * 100) + '%';
-      let label = en.state;
-      if (en.state === E.WINDUP && isJustTiming(en)) label = 'WINDUP*';
-      en.ui.state.textContent = label;
+      // 状態は文字ではなく色の印で出す。予備動作＝橙、ジャストの瞬間＝白く光る、
+      // 攻撃中＝赤、スタン＝黄。それ以外は印を消す
+      const just = (en.state === E.WINDUP && isJustTiming(en));
       en.ui.state.className = 'state' +
-        (en.state === E.WINDUP ? ' windup' : en.state === E.ACTIVE ? ' active' :
+        (just ? ' just' : en.state === E.WINDUP ? ' windup' : en.state === E.ACTIVE ? ' active' :
          en.state === E.STUNNED ? ' stunned' : '');
     } else en.ui.root.classList.add('hidden');
   }
@@ -5325,7 +5311,6 @@ function bossRng(seed) {
 const bossUi = {
   hud: document.getElementById('bossHud'),
   bar: document.getElementById('bossBarFill'),
-  round: document.getElementById('bossRound'),
   count: document.getElementById('bossCount'),
   scare: document.getElementById('scareVignette'),
 };
@@ -5529,7 +5514,6 @@ function beginRound(idx, preempt, burst) {
   en.rig.riseK = 0;
   setEnemyState(en, E.IDLE);
   bossUi.hud.classList.remove('hidden');
-  bossUi.round.textContent = 'ROUND ' + BOSS.round + ' / 3';
 
   // かくれんぼ明けは開幕に部屋の死体をほとんど爆散させる。
   // 派手さと、腕・体の補給を絞る目的。第1ラウンドは死体だらけのまま戦わせる
@@ -5619,10 +5603,8 @@ function updateBossFlee(en, wdt) {
       en.fleeStage = 'gone';
       if (BOSS.phase === 'CLEAR') {
         bossUi.hud.classList.add('hidden');
-        say('ダクトの男は完全に逃げた —— ボス戦終了 / [B] でもう一度', 6.0);
       } else {
         BOSS.phase = 'WAIT';
-        say('頭モード（Q長押し → Space）でダクトを抜けろ', 6.0);
       }
     }
   }
@@ -6041,7 +6023,6 @@ function warpToBoss() {
   playerPos.set((ARENA.gate.x0 + ARENA.gate.x1) / 2, 0, ARENA.z1 + 3.0);
   yaw = Math.PI; pitch = 0;
   showFeedback('DUCT MAN', '#59e0ff', 40);
-  say('入口の赤いラインを越えると始まる', 3.4);
 }
 
 createBossMan();
@@ -6215,7 +6196,6 @@ function demoClearWave() {
   DEMO.phase = (DEMO.next >= DEMO_WAVES.length) ? 'CLEAR' : 'OPEN';
   if (DEMO.phase === 'CLEAR') {
     showFeedback('ALL CLEAR', '#9ce8ff', 46);
-    say('突き当りまで。[G] でハブへ戻る', 4.0);
   } else {
     showFeedback('GATE OPEN', '#9ce8ff', 34);
   }
@@ -6233,7 +6213,6 @@ function startDemo() {
   DEMO.phase = 'OPEN';
   DEMO.next = 0; DEMO.wave = -1; DEMO.lockZ = null;
   showFeedback('DEMO STAGE', '#ffd75e', 42);
-  say('前へ進め。湧いた敵を倒すまで奥の門は開かない', 3.6);
 }
 
 function demoStop() {
@@ -6242,7 +6221,6 @@ function demoStop() {
   DEMO.active = false; DEMO.phase = 'IDLE';
   DEMO.next = 0; DEMO.wave = -1; DEMO.lockZ = null;
   for (const g of DEMO.gates) g.visible = false;
-  demoUi.hud.classList.add('hidden');
 }
 
 // デモは自分の矩形だけで閉じている。ハブの歩ける矩形とは繋がっていない
@@ -6254,11 +6232,7 @@ function demoConfine() {
 }
 
 /* ---------- 毎フレーム ---------- */
-const demoUi = {
-  hud: document.getElementById('demoHud'),
-  wave: document.getElementById('demoWave'),
-  left: document.getElementById('demoLeft'),
-};
+// ウェーブ数などの文字表示は出さない（指示のない文字は出さない方針）
 
 function updateDemo(wdt) {
   if (!DEMO.active) return;
@@ -6288,12 +6262,6 @@ function updateDemo(wdt) {
     }
     if (demoLiveCount() === 0) demoClearWave();
   }
-
-  demoUi.hud.classList.remove('hidden');
-  demoUi.wave.textContent = (DEMO.phase === 'CLEAR')
-    ? 'ALL CLEAR'
-    : 'WAVE ' + (Math.max(0, DEMO.wave) + 1) + ' / ' + DEMO_WAVES.length;
-  demoUi.left.textContent = (DEMO.phase === 'FIGHT') ? demoLiveCount() + ' LEFT' : 'ADVANCE';
 }
 
 /* ---------- リセット ---------- */
@@ -6596,8 +6564,7 @@ const MANUAL_PAGES = [
       aArrow(196, 47, 214, 47, C_HI, 2) +
       aKey(70, 150, 'Tab', true) +
       aRect(110, 128, 150, 44, 'rgba(0,0,0,0.6)') + aRect(110, 128, 3, 44, '#ff6b6b') +
-      '<text x="122" y="145" fill="#ff8c82" font-size="10" letter-spacing="2">OBJECTIVE</text>' +
-      '<text x="122" y="163" fill="#eef1ea" font-size="13">ゴールを目指す</text>'),
+      '<text x="122" y="155" fill="#eef1ea" font-size="13">ゴールを目指す</text>'),
   },
 
   /* --- 人間モード（拳） --- */
@@ -6634,7 +6601,7 @@ const MANUAL_PAGES = [
   {
     cat: '人間モード（拳）', title: 'キック',
     keys: [['Space', '']],
-    desc: 'リソースを1消費する蹴り。敵の攻撃予備動作（WINDUP*）に合わせて出すとジャストキックになる。腕を使わないので、両腕を失っても出せる。',
+    desc: 'リソースを1消費する蹴り。敵の攻撃予備動作で、頭上の印が白く光った瞬間に出すとジャストキックになる。腕を使わないので、両腕を失っても出せる。',
     art: () => aStage(
       aEnemy(180, 1.0, {}) + aBurst(180, 120, 0.9) +
       '<polygon points="200 216 240 206 212 128 186 136" fill="' + C_LEG +
@@ -6655,11 +6622,11 @@ const MANUAL_PAGES = [
   },
   {
     cat: '人間モード（拳）', title: 'ジャストドッジ',
-    keys: [['Shift', 'WINDUP* に合わせて']],
-    desc: '敵のHUDが WINDUP* になった瞬間にドッジすると成立。リソースを消費せず逆に1回復し、短いスローがかかる。',
+    keys: [['Shift', '白い印に合わせて']],
+    desc: '敵の頭上の印が白く光った瞬間にドッジすると成立。リソースを消費せず逆に1回復し、短いスローがかかる。',
     art: () => aStage(
       aEnemy(180, 0.95, { feet: 164 }) +
-      aText(180, 48, 'WINDUP*', { size: 14, col: '#ffb45e' }) +
+      '<rect x="174" y="40" width="12" height="12" fill="#fff" transform="rotate(45 180 46)"/>' +
       '<rect x="0" y="0" width="360" height="200" fill="' + C_COOL + '" opacity="0.07"/>' +
       '<circle cx="182" cy="156" r="10" fill="' + C_ARM + '"/>' +
       aArrow(172, 182, 112, 182, C_COOL, 3) +
@@ -7228,7 +7195,7 @@ scene.add(rackGroup);
 // 看板の[F]プロンプト（死体の胸元と同じ見た目）
 const signPrompt = document.createElement('div');
 signPrompt.className = 'chest-prompt hidden';
-signPrompt.innerHTML = '<span class="key">F</span><span>操作説明</span>';
+signPrompt.innerHTML = '<span class="key">F</span>';
 document.body.appendChild(signPrompt);
 
 function signInRange() {
@@ -7887,11 +7854,7 @@ function animate() {
 
   const risingActive = inRising && risingBlend > 0.25;
   ui.slowOverlay.classList.toggle('hidden', !(risingActive || slowTimer > 0));
-  // SLOW / RISING / HEAD などのモード名は出さない（スローは画面の縁の色で伝える）。
-  // 頭が潰れたときだけは頭・脊柱・脚が全部消えるので、DEAD を出さないと
-  // 「何が起きたか」が画面から完全に消える
-  ui.risingLabel.classList.toggle('hidden', !(headMode && headDead));
-  ui.risingLabel.classList.toggle('dead', headMode && headDead);
+  // SLOW / RISING / HEAD / DEAD などのモード名は出さない（スローは画面の縁の色で伝える）
 
 
   if (flashTimer > 0) {
@@ -7899,10 +7862,6 @@ function animate() {
     ui.flash.style.opacity = String(Math.max(0, flashTimer / 0.18) * flashPower);
   } else ui.flash.style.opacity = '0';
 
-  if (feedbackTimer > 0) {
-    feedbackTimer -= rdt;
-    ui.feedback.style.opacity = String(Math.min(1, feedbackTimer / 0.35));
-  } else ui.feedback.style.opacity = '0';
 
   updatePlayerHud();
   updateSubtitle(rdt);
