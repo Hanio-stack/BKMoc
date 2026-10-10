@@ -160,6 +160,14 @@ const CONFIG = {
   // 広角。ただし広げるほど敵は小さく写るので、寄せた距離ぶんと釣り合う所で止めてある
   // （96→106 で見かけの大きさはほぼ据え置き。敵を大きくしたいならここを下げる）
   fovSever: 106,
+  // ライジングのカメラ案（試作）。6〜0キーで切り替え
+  // 0=現行 / 1=A ポップ→首越し / 2=B 見上げ→クレーン / 3=C 横から回り込み / 4=D 頭に乗って見下ろす
+  riseCamStyle: 1,
+  // 首越しカメラ（各案の最終位置）。首が肩の代わり：頭の右後ろ・ほぼ頭の高さ
+  neckCamBack: 0.72,
+  neckCamSide: 0.56,
+  neckCamHeight: -0.16,
+  fovNeck: 84,
 
   /* --- 頭モード（ライジング中にSpaceで体を切り離す）--- */
   headBleedDuration: 10.0,     // 頭モードは出血で死ぬ。HP100を使い切るまで(s)
@@ -1364,6 +1372,7 @@ let projectiles = [];
 
 /* ---------- ライジング / 頭モード制御 ---------- */
 let risingBlend = 0;           // 0=人間, 1=脊柱が伸びきった状態
+let riseCamT = 0;              // ライジング開始からの実時間（カメラ演出用。戻り中は止める）
 let selectedTarget = null;     // { kind:'part'|'corpse', ... }
 let risingSlashSide = 'RIGHT'; // 蜘蛛脚を左右交互に振るための状態
 let legSwing = null;           // 振りの進行 { side, t }
@@ -1416,6 +1425,13 @@ document.addEventListener('keydown', (e) => {
   // 体スキルの付け替え（プロトタイプ検証用）。4=阿修羅 / 5=回復。未使用に戻る
   if (e.code === 'Digit4') { setBodySkill(SKILL.ASURA); return; }
   if (e.code === 'Digit5') { setBodySkill(SKILL.HEAL); return; }
+  // ライジングのカメラ案の切り替え（試作）。6=現行 / 7=A / 8=B / 9=C / 0=D
+  const camKeys = { Digit6: 0, Digit7: 1, Digit8: 2, Digit9: 3, Digit0: 4 };
+  if (e.code in camKeys) {
+    CONFIG.riseCamStyle = camKeys[e.code];
+    showFeedback('CAM ' + RISE_CAM_NAMES[CONFIG.riseCamStyle], '#9fd8ff', 22);
+    return;
+  }
 
   // 体スキル。体ごとに1回だけ
   if (e.code === 'KeyZ') { useBodySkill(); return; }
@@ -1536,7 +1552,7 @@ const startOverlay = document.getElementById('startOverlay');
 const LOCK_KEYS = [
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyR', 'KeyT', 'KeyN', 'KeyF', 'KeyG',
   'KeyB', 'KeyV', 'KeyZ', 'KeyX', 'KeyC', 'Tab', 'Space',
-  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0',
 ];
 startOverlay.addEventListener('click', () => {
   const root = document.documentElement;
@@ -2820,6 +2836,7 @@ function startRising() {
   state = S.RISE_IN;
   selectedTarget = null;
   spineGroup.visible = true;
+  riseCamT = 0;
   showFeedback('RISING', '#ffe98a', 26);
 }
 
@@ -7213,6 +7230,157 @@ function updateRack(rdt) {
    ========================================================= */
 updateArmVisuals();
 
+/* ---------- ライジングのカメラ案（試作）----------
+   どの案も「首が飛び出すところを見せる → 首越しの寄りカメラに落ち着く」。
+   違うのは見せ方だけ。t はライジング開始からの実時間(s)。
+   最終位置（首越し）は全案共通で、頭の右後ろ・ほぼ頭の高さから前を見る。
+   肩の代わりに伸びた首と頭が画面左に入る                                  */
+const RISE_CAM_NAMES = ['現行', 'A ポップ→首越し', 'B 見上げ→クレーン', 'C 横から回り込み', 'D 頭に乗って見下ろす'];
+const _rcA = new THREE.Vector3(), _rcB = new THREE.Vector3();
+const _rcFwd = new THREE.Vector3(), _rcFlat = new THREE.Vector3(), _rcRight = new THREE.Vector3();
+const _rcP0 = new THREE.Vector3(), _rcP1 = new THREE.Vector3();
+const _rcL0 = new THREE.Vector3(), _rcL1 = new THREE.Vector3();
+const _rcOut = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 90 };
+const smooth01 = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+const easeOut01 = (x) => { x = Math.max(0, Math.min(1, x)); return 1 - Math.pow(1 - x, 3); };
+// 区間 [a,b] での進み具合
+const span = (t, a, b) => (t - a) / (b - a);
+
+// 戻り（RISE_OUT）でだけ 1→0 になる重み。入りは各案が一人称から始めるので常に1
+function riseCamWeight() {
+  return state === S.RISE_OUT ? smooth01(risingBlend) : 1;
+}
+
+// 首越し（最終位置）
+function neckCamPose(pos, look) {
+  pos.copy(headPos)
+    .addScaledVector(_rcFlat, -CONFIG.neckCamBack)
+    .addScaledVector(_rcRight, CONFIG.neckCamSide);
+  pos.y += CONFIG.neckCamHeight;
+  look.copy(headPos).addScaledVector(_rcFwd, 6.0);
+}
+
+function riseCamPose(style, t) {
+  _rcFwd.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+  _rcFlat.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  _rcRight.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  const o = _rcOut;
+  const neckBase = _rcA.set(playerPos.x, playerPos.y + EYE - 0.1, playerPos.z);
+  // 一人称（開始姿勢）
+  const fpsPos = (v) => v.set(playerPos.x, playerPos.y + EYE, playerPos.z);
+  const fpsLook = (v) => v.set(playerPos.x, playerPos.y + EYE, playerPos.z).addScaledVector(_rcFwd, 5.0);
+
+  if (style === 1) {
+    // A：右後ろ上へ一気に引いて、体ごと首が伸びるのを見せる → 首越しへ寄る
+    const reveal = (p, l) => {
+      p.copy(playerPos).addScaledVector(_rcFlat, -1.9).addScaledVector(_rcRight, 0.95);
+      p.y += 1.95;
+      l.copy(neckBase).addScaledVector(_rcFlat, 0.6); l.y += 0.35;
+    };
+    if (t < 0.16) {
+      const k = easeOut01(span(t, 0, 0.16));
+      fpsPos(_rcP0); fpsLook(_rcL0); reveal(_rcP1, _rcL1);
+      o.fov = 75 + (84 - 75) * k;
+      o.pos.lerpVectors(_rcP0, _rcP1, k); o.look.lerpVectors(_rcL0, _rcL1, k);
+    } else if (t < 0.55) {
+      // 少しだけ押し込みながら首の伸びを見せる
+      reveal(o.pos, o.look);
+      o.pos.addScaledVector(_rcFlat, 0.25 * span(t, 0.16, 0.55));
+      o.fov = 84;
+    } else {
+      const k = smooth01(span(t, 0.55, 1.0));
+      reveal(_rcP0, _rcL0); _rcP0.addScaledVector(_rcFlat, 0.25);
+      neckCamPose(_rcP1, _rcL1);
+      o.pos.lerpVectors(_rcP0, _rcP1, k); o.look.lerpVectors(_rcL0, _rcL1, k);
+      o.fov = 84 + (CONFIG.fovNeck - 84) * k;
+    }
+  } else if (style === 2) {
+    // B：元の目の高さの少し後ろに残り、飛び出していく頭を見上げる → 首に沿って上がる
+    const low = (p, l) => {
+      p.copy(playerPos).addScaledVector(_rcFlat, -0.95).addScaledVector(_rcRight, 0.55);
+      p.y += 1.6;
+      l.copy(headPos).addScaledVector(_rcFlat, 0.5);   // 頭を追って見上げる
+    };
+    if (t < 0.14) {
+      const k = easeOut01(span(t, 0, 0.14));
+      fpsPos(_rcP0); fpsLook(_rcL0); low(_rcP1, _rcL1);
+      o.pos.lerpVectors(_rcP0, _rcP1, k); o.look.lerpVectors(_rcL0, _rcL1, k);
+      o.fov = 75 + (88 - 75) * k;
+    } else if (t < 0.5) {
+      low(o.pos, o.look); o.fov = 88;
+    } else {
+      const k = smooth01(span(t, 0.5, 1.0));
+      low(_rcP0, _rcL0); neckCamPose(_rcP1, _rcL1);
+      // 首に沿って上がる：高さを先に、前後左右はあとから
+      o.pos.lerpVectors(_rcP0, _rcP1, smooth01(span(t, 0.5, 0.85)));
+      o.pos.y = _rcP0.y + (_rcP1.y - _rcP0.y) * smooth01(span(t, 0.5, 0.75));
+      o.look.lerpVectors(_rcL0, _rcL1, k);
+      o.fov = 88 + (CONFIG.fovNeck - 88) * k;
+    }
+  } else if (style === 3) {
+    // C：右真横に回って首が伸びるシルエットを見せる → 背中側へ弧を描いて首越しへ
+    const orbit = (p, ang, r, h) => {
+      // ang=0 が真後ろ、+π/2 が右真横
+      p.copy(neckBase)
+        .addScaledVector(_rcFlat, -Math.cos(ang) * r)
+        .addScaledVector(_rcRight, Math.sin(ang) * r);
+      p.y = playerPos.y + h;
+    };
+    const SIDE = 1.75, R0 = 2.1;
+    if (t < 0.18) {
+      const k = easeOut01(span(t, 0, 0.18));
+      fpsPos(_rcP0); fpsLook(_rcL0);
+      orbit(_rcP1, SIDE, R0, 1.85);
+      _rcL1.copy(neckBase); _rcL1.y += 0.35;
+      o.pos.lerpVectors(_rcP0, _rcP1, k); o.look.lerpVectors(_rcL0, _rcL1, k);
+      o.fov = 75 + (80 - 75) * k;
+    } else if (t < 0.55) {
+      orbit(o.pos, SIDE - 0.12 * span(t, 0.18, 0.55), R0, 1.85);
+      o.look.copy(neckBase); o.look.y += 0.35;
+      o.fov = 80;
+    } else {
+      const k = smooth01(span(t, 0.55, 1.1));
+      neckCamPose(_rcP1, _rcL1);
+      // 最終位置の角度・半径・高さへ極座標で補間（直線だと体を突き抜ける）
+      _rcB.copy(_rcP1).sub(neckBase);
+      const endAng = Math.atan2(_rcB.dot(_rcRight), -_rcB.dot(_rcFlat));
+      const endR = Math.hypot(_rcB.dot(_rcRight), _rcB.dot(_rcFlat));
+      orbit(o.pos, (SIDE - 0.12) + (endAng - (SIDE - 0.12)) * k, R0 + (endR - R0) * k,
+        1.85 + (_rcP1.y - playerPos.y - 1.85) * k);
+      _rcL0.copy(neckBase); _rcL0.y += 0.35;
+      o.look.lerpVectors(_rcL0, _rcL1, k);
+      o.fov = 80 + (CONFIG.fovNeck - 80) * k;
+    }
+  } else {
+    // D：頭に乗ったまま飛び出し、足元の自分の体と伸びる首を見下ろす → 後ろへ引いて首越し
+    const ride = (p, l) => {
+      p.copy(headPos).addScaledVector(_rcFlat, -0.12);
+      l.copy(headPos).addScaledVector(_rcFlat, 0.9); l.y = playerPos.y + 0.3;
+    };
+    if (t < 0.12) {
+      const k = easeOut01(span(t, 0, 0.12));
+      fpsPos(_rcP0); fpsLook(_rcL0); ride(_rcP1, _rcL1);
+      o.pos.lerpVectors(_rcP0, _rcP1, k); o.look.lerpVectors(_rcL0, _rcL1, k);
+      o.fov = 75 + (100 - 75) * k;
+    } else if (t < 0.5) {
+      ride(o.pos, o.look); o.fov = 100;
+    } else {
+      // 頭の中から真っすぐ引くと頭を内側から突き抜けて見えるので、
+      // いったん頭の後ろ上を通る曲線（2次ベジェ）で回り込む
+      const k = smooth01(span(t, 0.5, 0.95));
+      ride(_rcP0, _rcL0); neckCamPose(_rcP1, _rcL1);
+      _rcB.copy(headPos).addScaledVector(_rcFlat, -0.8).addScaledVector(_rcRight, 0.25);
+      _rcB.y += 0.3;
+      const a = (1 - k) * (1 - k), b = 2 * k * (1 - k), c = k * k;
+      o.pos.set(0, 0, 0).addScaledVector(_rcP0, a).addScaledVector(_rcB, b).addScaledVector(_rcP1, c);
+      o.look.lerpVectors(_rcL0, _rcL1, k);
+      o.fov = 100 + (CONFIG.fovNeck - 100) * k;
+    }
+  }
+  o.pos.y = Math.max(o.pos.y, 0.4);
+  return o;
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const rdt = Math.min(clock.getDelta(), 0.05);
@@ -7558,8 +7726,16 @@ function animate() {
   }
 
   /* --- カメラ --- */
+  let riseCam = null;
+  if (inRising && CONFIG.riseCamStyle !== 0) {
+    if (state !== S.RISE_OUT) riseCamT += rdt;
+    riseCam = riseCamPose(CONFIG.riseCamStyle, riseCamT);
+  }
   let targetFov = inRising
-    ? CONFIG.fovNormal + (CONFIG.fovSever - CONFIG.fovNormal) * risingBlend
+    ? (riseCam
+      // 戻りは脊柱の縮みに合わせて人間の画角へ
+      ? CONFIG.fovNormal + (riseCam.fov - CONFIG.fovNormal) * riseCamWeight()
+      : CONFIG.fovNormal + (CONFIG.fovSever - CONFIG.fovNormal) * risingBlend)
     : (headMode ? CONFIG.fovNormal + 8 : CONFIG.fovNormal);
   // 触手が刺さった瞬間だけ画角を詰める。ヒットストップと合わせて「刺さった」を出す
   if (tentFovKick > 0) {
@@ -7604,6 +7780,15 @@ function animate() {
   } else if (!inRising) {
     camera.position.set(playerPos.x, playerPos.y + EYE, playerPos.z);
     camera.rotation.set(pitch, yaw, 0);
+  } else if (riseCam) {
+    // 試作のカメラ案。戻り（RISE_OUT）は案の姿勢から一人称へ寄せる
+    const w = riseCamWeight();
+    const fps = _rcA.set(playerPos.x, playerPos.y + EYE, playerPos.z);
+    const aim = _rcB.copy(fps).addScaledVector(_rcFwd, 5.0);
+    camera.position.lerpVectors(fps, riseCam.pos, w);
+    camera.lookAt(aim.lerp(riseCam.look, w));
+    // 頭の中・すぐ外を通るあいだは頭を消す（内側から突き抜けて見えるのを防ぐ）
+    if (camera.position.distanceTo(headPos) < 0.42) headMesh.visible = false;
   } else {
     // FPS位置 → 頭越しの寄りTPSへブレンド
     const fwd = new THREE.Vector3(
