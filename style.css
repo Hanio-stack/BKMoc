@@ -108,7 +108,7 @@ canvas { display: block; }
 .enemy-bars .state.active { background: #ff5e5e; box-shadow: 0 0 6px rgba(255, 94, 94, 0.8); }
 .enemy-bars .state.stunned { background: #ffe98a; box-shadow: 0 0 6px rgba(255, 233, 138, 0.8); }
 
-/* ---- 胸元のインタラクトボタン ---- */
+/* ---- インタラクトボタン（今は操作説明の看板の [F] だけが使う）---- */
 .chest-prompt {
   position: fixed;
   transform: translate(-50%, -50%);
@@ -127,20 +127,6 @@ canvas { display: block; }
   border: 1px solid rgba(255, 235, 150, 0.85);
   padding: 0 5px;
   font-weight: bold;
-}
-/* 乗っ取れる体の体スキル（HUDと同じ絵）。使用済みは薄く */
-.chest-prompt .skill-ico { display: inline-flex; width: 20px; height: 20px; color: #ffe98a; }
-.chest-prompt .skill-ico > svg {
-  width: 100%; height: 100%;
-  fill: none; stroke: currentColor; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round;
-}
-.chest-prompt .skill-ico .f { fill: currentColor; stroke: none; }
-.chest-prompt .skill-ico.used { opacity: 0.35; }
-/* 乗っ取れる体のリソースの数（青い丸の数） */
-.chest-prompt .res-tag { display: inline-flex; gap: 3px; margin-left: 2px; }
-.chest-prompt .res-tag > i {
-  display: block; width: 7px; height: 7px; border-radius: 50%;
-  background: #6fb6d8; box-shadow: 0 0 4px rgba(110, 180, 215, 0.7);
 }
 
 /* ---- スロー演出 ---- */
