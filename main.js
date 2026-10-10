@@ -23,6 +23,9 @@
        あとから出ると判定がずれる。先行入力の対象にしていない。
      Q 長押し        ライジング（いつでも可）
      Z                体スキル（体ごとに1回だけ。下の「体スキル」参照）
+     ※キック／ドッジのリソース（青い丸）の数は体ごとに 2〜6 のランダム。
+       死体を乗っ取るとその体の数になる（満タンで始まる）。最初の体だけ3つ。
+       自分が捨てた体は数も残りもそのまま残る。死体の TAKE BODY に数が出る
      F                落ちている/浮いている腕と交換
      G                リセット
      Tab              今の目的を左上に表示／もう一度押すと消える
@@ -508,7 +511,11 @@ const CONFIG = {
   guardMoveMul: 0.5,           // ガード中の移動速度の倍率
 
   /* --- キック / ドッジ --- */
-  resourceMax: 3,
+  // リソースの数（青い丸）は体ごとに違う。乗っ取った体で resourceMin〜resourceMax の
+  // ランダム（本番は死体ごとに設定する想定）。最初の体だけ resourceStart で固定
+  resourceStart: 3,
+  resourceMin: 2,
+  resourceMax: 6,
   resourceRegenTime: 3.0,
   kickStartup: 0.12,
   kickRecover: 0.35,
@@ -742,6 +749,11 @@ const SKILL_LABEL = { asura: 'ASURA', heal: 'HEAL' };
 function makeBodySkill(kind) {
   return { kind: kind || SKILL_LIST[Math.floor(Math.random() * SKILL_LIST.length)], used: false };
 }
+// 体のリソース（ドッジ／キック）の数。体スキルと同じく体ごとに決まる
+function randomBodyResource() {
+  return CONFIG.resourceMin +
+    Math.floor(Math.random() * (CONFIG.resourceMax - CONFIG.resourceMin + 1));
+}
 
 /* ---------- プレイヤー ---------- */
 const playerPos = new THREE.Vector3(0, 0, 6);
@@ -749,7 +761,8 @@ let yaw = 0, pitch = 0;
 
 const player = {
   hp: CONFIG.playerMaxHp,
-  resource: CONFIG.resourceMax,
+  resource: CONFIG.resourceStart,
+  resMax: CONFIG.resourceStart,       // 今の体のリソースの数（体ごとに違う）
   resourceCharge: 0,
   arms: { LEFT: makeArmState(ARM.FIST), RIGHT: makeArmState(ARM.FIST) },
   skill: makeBodySkill(),             // 今の体の体スキル
@@ -1046,6 +1059,8 @@ const CORPSE_SPOTS = [[-3, 2, 0.8], [3, 1, -1.2], [-1, 10, 2.4]];   // どの部
 //         null は欠けている（斬って奪った腕）。省略時はフルHPの拳
 //   fuse: 爆発までの秒数（ワールド時間）。null なら爆発しない
 //   skill: 体スキル { kind, used }。省略時はランダム（自分が捨てた体は使用済みかも引き継ぐ）
+//   resMax: リソースの数。省略時は resourceMin〜resourceMax のランダム
+//   resource: 乗っ取ったときの残り。省略時は満タン（自分が捨てた体だけ捨てた時点の残り）
 //   extraArms: 阿修羅の追加の腕（自分が捨てた体だけ）。乗っ取り直すと生え直す
 function createCorpse(x, z, rotY, opts) {
   opts = opts || {};
@@ -1130,11 +1145,13 @@ function createCorpse(x, z, rotY, opts) {
     armEls[key] = ae;
   }
   const skill = opts.skill ? Object.assign({}, opts.skill) : makeBodySkill();
+  const resMax = opts.resMax || randomBodyResource();
   const prompt = document.createElement('div');
   prompt.className = 'chest-prompt hidden';
-  // 体スキルの種類も出す。どの体を取るかを選ぶ材料になる
+  // 体スキルの種類とリソースの数も出す。どの体を取るかを選ぶ材料になる
   prompt.innerHTML = '<span class="key">F</span><span>TAKE BODY</span>' +
-    '<span class="skill-tag' + (skill.used ? ' used' : '') + '">' + SKILL_LABEL[skill.kind] + '</span>';
+    '<span class="skill-tag' + (skill.used ? ' used' : '') + '">' + SKILL_LABEL[skill.kind] + '</span>' +
+    '<span class="res-tag">' + '<i></i>'.repeat(resMax) + '</span>';
   document.body.appendChild(prompt);
 
   // 爆発が近いことを体ぜんぶで示すため、死体のマテリアルを集めておく。
@@ -1154,6 +1171,8 @@ function createCorpse(x, z, rotY, opts) {
     // 敵の死体や最初から置いてある体は null ＝ 全快の新品
     hp: (typeof opts.hp === 'number') ? opts.hp : null,
     skill,
+    resMax,
+    resource: (typeof opts.resource === 'number') ? Math.min(resMax, opts.resource) : resMax,
     extraArms: opts.extraArms || null,
     blinkPhase: 0,
   };
@@ -1587,11 +1606,6 @@ const ui = {
     RIGHT: document.getElementById('circleArmR'),
     CORE: document.getElementById('circleCore'),
   },
-  tags: {
-    LEFT: document.getElementById('tagArmL'),
-    RIGHT: document.getElementById('tagArmR'),
-    CORE: document.getElementById('tagCore'),
-  },
 };
 // 丸の中身（fill / アイコン）を引きやすいようにまとめておく
 const hudCircle = {};
@@ -1648,12 +1662,18 @@ function setHudIcon(c, key) {
   c.iconKey = key;
   c.icon.innerHTML = '<svg viewBox="0 0 48 48">' + HUD_ICON[key] + '</svg>';
 }
+// リソースの丸。数は体ごとに違うので、体が変わったら作り直す（中央ぞろえは CSS の flex）
 const pips = [];
-for (let i = 0; i < CONFIG.resourceMax; i++) {
-  const p = document.createElement('div');
-  p.className = 'pip'; p.innerHTML = '<i></i>';
-  ui.resPips.appendChild(p); pips.push(p);
+function buildPips(n) {
+  if (pips.length === n) return;
+  while (pips.length > n) pips.pop().remove();
+  while (pips.length < n) {
+    const p = document.createElement('div');
+    p.className = 'pip'; p.innerHTML = '<i></i>';
+    ui.resPips.appendChild(p); pips.push(p);
+  }
 }
+buildPips(player.resMax);
 
 /* ---------- プレイヤーHUD ----------
    左右下＝腕HP、中央下＝体HP（頭モードでは頭HP）。丸は上から下へ減る。
@@ -1677,8 +1697,6 @@ function updatePlayerHud() {
   ui.skillRing.classList.toggle('on', ready);
   ui.skillKey.classList.toggle('on', ready);
   ui.skillRing.classList.toggle('fire', hudSkillFire > 0 && !headMode);
-  ui.tags.CORE.textContent = headMode ? 'HEAD' : (sk ? SKILL_LABEL[sk.kind] : 'BODY');
-  ui.tags.CORE.classList.toggle('used', !headMode && !!sk && sk.used);
 
   // --- 腕（頭モードでは丸ごと非表示なので更新だけしておく）---
   for (const side of ['LEFT', 'RIGHT']) {
@@ -1695,12 +1713,11 @@ function updatePlayerHud() {
     c.el.classList.toggle('gun', isGun && !st.lost);
     c.el.classList.toggle('tent', isTent && !st.lost);
     c.el.classList.toggle('low', !st.lost && st.hp <= CONFIG.armHitCost);
-    ui.tags[side].textContent = st.lost ? 'LOST'
-      : (isGun ? 'GUN' : (isTent ? 'TENT' : (st.purged ? 'PURGED' : 'FIST')));
   }
 
   // --- リソース：左から減る（残りは右詰め）---
-  const firstFull = CONFIG.resourceMax - player.resource;
+  buildPips(player.resMax);
+  const firstFull = player.resMax - player.resource;
   for (let i = 0; i < pips.length; i++) {
     const full = i >= firstFull;
     const charging = (i === firstFull - 1);
@@ -2189,7 +2206,7 @@ function doDodge() {
   if (!just && player.resource < 1) { showFeedback('NO RESOURCE', '#8b8f88', 22); return; }
   cancelCurrentAction();
   if (just) {
-    player.resource = Math.min(CONFIG.resourceMax, player.resource + 1);
+    player.resource = Math.min(player.resMax, player.resource + 1);
     slowTimer = CONFIG.justDodgeSlowTime;
     slowScaleOverride = CONFIG.justDodgeSlowScale;
     showFeedback('JUST DODGE!', '#9ce8ff', 38);
@@ -2909,6 +2926,7 @@ function enterHeadMode() {
     arms: { LEFT: cloneArmState(player.arms.LEFT), RIGHT: cloneArmState(player.arms.RIGHT) },
     fuse: CONFIG.corpseFuse, hp: player.hp,
     skill: player.skill,                 // 使用済みかどうかも体と一緒に残る
+    resMax: player.resMax, resource: player.resource,   // リソースの数と残りも体に残る
     extraArms: stashAsuraArms(),         // 阿修羅の腕は体に付いたまま（拾い直すと生え直す）
   });
   // 頭は後ろへ跳ぶ。同じ座標のままだと自分の死体の中に埋まり、
@@ -3070,6 +3088,10 @@ function finishPossess() {
   }
   // 体スキルも体と一緒に入れ替わる。阿修羅を使った自分の体なら腕も生え直す
   player.skill = Object.assign({}, c.skill);
+  // リソースの数も体ごと。新しい体は満タン、自分が捨てた体は捨てた時点の残り
+  player.resMax = c.resMax;
+  player.resource = c.resource;
+  player.resourceCharge = 0;
   clearAsuraArms();
   if (c.extraArms) spawnAsuraArms(c.extraArms);
   player.gunRecoil.LEFT = 0; player.gunRecoil.RIGHT = 0;
@@ -6279,7 +6301,8 @@ function updateDemo(wdt) {
 function resetAll() {
   demoStop();          // デモの敵を消してから。enemies の並びを ENEMY_SPOTS に戻す
   player.hp = CONFIG.playerMaxHp;
-  player.resource = CONFIG.resourceMax;
+  player.resMax = CONFIG.resourceStart;
+  player.resource = player.resMax;
   player.resourceCharge = 0;
   player.arms.LEFT = makeArmState(ARM.FIST);
   player.arms.RIGHT = makeArmState(ARM.FIST);
@@ -7456,7 +7479,7 @@ function animate() {
   if (state === S.POSSESS && possess) updatePossess(rdt);
   if (legSwing) { legSwing.t += rdt; if (legSwing.t >= CONFIG.spiderSwingTime) legSwing = null; }
 
-  if (player.resource < CONFIG.resourceMax) {
+  if (player.resource < player.resMax) {
     player.resourceCharge += dt;
     if (player.resourceCharge >= CONFIG.resourceRegenTime) { player.resourceCharge = 0; player.resource++; }
   } else player.resourceCharge = 0;

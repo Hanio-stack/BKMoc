@@ -128,6 +128,12 @@ canvas { display: block; }
   border-radius: 3px;
 }
 .chest-prompt .skill-tag.used { opacity: 0.45; text-decoration: line-through; }
+/* 乗っ取れる体のリソースの数（青い丸の数） */
+.chest-prompt .res-tag { display: inline-flex; gap: 3px; margin-left: 2px; }
+.chest-prompt .res-tag > i {
+  display: block; width: 7px; height: 7px; border-radius: 50%;
+  background: #6fb6d8; box-shadow: 0 0 4px rgba(110, 180, 215, 0.7);
+}
 
 /* ---- スロー演出 ---- */
 #slowOverlay {
@@ -282,15 +288,6 @@ canvas { display: block; }
 .hp-circle.lost { border-style: dashed; border-color: rgba(255, 255, 255, 0.12); }
 .hp-circle.lost > .icon { color: #ff8f7a; }
 
-.slot-tag {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  font-size: 10px; letter-spacing: 0.16em; white-space: nowrap;
-  color: rgba(200, 205, 195, 0.55);
-  text-shadow: 0 0 6px #000;
-}
-.hud-slot.arm .slot-tag { bottom: -16px; }
-#tagCore { top: -18px; color: rgba(200, 225, 210, 0.6); }
-#tagCore.used { color: rgba(200, 205, 195, 0.35); text-decoration: line-through; }
 
 /* ---- 体スキル：使えるあいだ体の丸の縁が光る（OWのウルトのイメージ）----
    金色の輪＋外側のにじみ＋輪の上を回る光。使うと弾けて消える */
@@ -357,7 +354,6 @@ canvas { display: block; }
   background: radial-gradient(ellipse at center, rgba(80, 255, 150, 0) 45%,
               rgba(80, 255, 150, 0.22) 75%, rgba(60, 230, 130, 0.55) 100%);
 }
-#playerHud.head #tagCore { color: rgba(255, 150, 130, 0.85); }
 
 /* リソース（ドッジ／キック）。体の丸の下に中央ぞろえ、左から減る */
 #resPips {
