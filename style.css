@@ -185,19 +185,19 @@ canvas { display: block; }
    左右下＝腕HP / 中央下＝体HP（頭モードでは頭HP）。
    丸は上から下へ減る（下端から fill の高さを伸ばす）。
    体HPの下にドッジ・キックのリソースが横並びで、左から減る。
-   3つの丸は「同じ高さ」＝中心のy座標を揃えてある（中央だけ少し大きい）。
-   画面のいちばん下は字幕の場所なので、そのぶん上げてある。               */
+   画面中央下は字幕の場所なので、中央（体）だけ上げてある。
+   左右の腕は元の高さのまま（中心のyは揃っていない）。                    */
 #playerHud { pointer-events: none; }
 
 .hud-slot {
-  position: fixed; bottom: 124px;
+  position: fixed; bottom: 100px;
   width: 64px; height: 64px;
   z-index: 20; pointer-events: none;
 }
 #slotArmL { left: 46px; }
 #slotArmR { right: 46px; }
 #slotCore {
-  /* 中央だけ72px。中心のyを腕(124+32=156)に合わせるので bottom は 120px */
+  /* 中央だけ72px。字幕の上に出すため腕より24px高い（中心y 156 / 腕は 132） */
   left: 50%; margin-left: -36px; bottom: 120px;
   width: 72px; height: 72px;
 }
