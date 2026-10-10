@@ -25,6 +25,8 @@
      Z                体スキル（体ごとに1回だけ。下の「体スキル」参照）
      F                落ちている/浮いている腕と交換
      G                リセット
+     Tab              今の目的を左上に表示／もう一度押すと消える
+                      （上中央のコンパスは常に出ていて、赤い丸がゴールの方角）
 
    掴みフィニッシャー（パンチの延長・専用入力もUIもない）:
      パンチが「スタン中の敵」に当たると、殴った側の腕が自動で敵の頭を掴んで握り潰す。
@@ -1394,7 +1396,7 @@ const locked = () => document.pointerLockElement === renderer.domElement;
 
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
-  if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();   // Tabはフォーカス移動を止める
   // Ctrl（ガード）を握ったまま押したキーをブラウザのショートカットにしない
   // （Ctrl+D のブックマーク、Ctrl+S の保存など）。Ctrl+W だけはブラウザが
   // 横取りできないので、下の beforeunload で閉じる前に確認を出す
@@ -1408,6 +1410,9 @@ document.addEventListener('keydown', (e) => {
     else if (e.code === 'KeyD') manualTurn(1);
     return;
   }
+
+  // 目的の表示を開閉する（普段は隠れている）
+  if (e.code === 'Tab') { toggleObjective(); return; }
 
   if (e.code === 'KeyG') { resetAll(); return; }
   if (e.code === 'KeyB') { warpToBoss(); return; }
@@ -1704,6 +1709,40 @@ function updatePlayerHud() {
       ? (player.resourceCharge / CONFIG.resourceRegenTime * 100) + '%' : '0%';
   }
   ui.resPips.classList.toggle('muted', headMode);
+}
+
+/* ---------- 字幕（画面中央下）----------
+   ボス戦で敵が話すとき、主人公が話すときなどに使う。
+   say('ダクトの男：また来たのか', 3.0) のように「話者：せりふ」で渡すと
+   話者の名前だけ色が付く（主人公は PLAYER_SPEAKER の名前で渡すと別の色）。
+   「：」がなければ地の文としてそのまま出す。dur 秒で消える              */
+const PLAYER_SPEAKER = '主人公';
+const subtitleEl = document.getElementById('subtitle');
+let subtitleT = 0;
+function say(text, dur) {
+  subtitleEl.textContent = '';
+  const m = /^([^：]{1,12})：(.*)$/.exec(text);
+  if (m) {
+    const spk = document.createElement('span');
+    spk.className = 'spk' + (m[1] === PLAYER_SPEAKER ? ' me' : '');
+    spk.textContent = m[1];
+    subtitleEl.append(spk, m[2]);
+  } else {
+    subtitleEl.textContent = text;
+  }
+  subtitleEl.classList.remove('hidden');
+  subtitleEl.style.opacity = '1';
+  subtitleT = dur || 2.6;
+}
+function hideSubtitle() {
+  subtitleT = 0;
+  subtitleEl.classList.add('hidden');
+}
+function updateSubtitle(rdt) {
+  if (subtitleT <= 0) return;
+  subtitleT -= rdt;
+  subtitleEl.style.opacity = String(Math.min(1, subtitleT / 0.4));
+  if (subtitleT <= 0) subtitleEl.classList.add('hidden');
 }
 
 /* ---------- 演出ヘルパ ---------- */
@@ -5261,21 +5300,14 @@ function bossRng(seed) {
   };
 }
 
-/* ---------- 字幕・カウントダウン ---------- */
+/* ---------- カウントダウン ---------- */
 const bossUi = {
   hud: document.getElementById('bossHud'),
   bar: document.getElementById('bossBarFill'),
   round: document.getElementById('bossRound'),
   count: document.getElementById('bossCount'),
-  sub: document.getElementById('subtitle'),
   scare: document.getElementById('scareVignette'),
 };
-let subtitleT = 0;
-function bossSay(text, dur) {
-  bossUi.sub.textContent = text;
-  bossUi.sub.classList.remove('hidden');
-  subtitleT = dur || 2.6;
-}
 
 /* ---------- ダクトの男の生成 ---------- */
 function createBossMan() {
@@ -5424,9 +5456,8 @@ function resetBoss() {
   stolenArms = [];
   bossUi.hud.classList.add('hidden');
   bossUi.count.classList.add('hidden');
-  bossUi.sub.classList.add('hidden');
+  hideSubtitle();
   bossUi.scare.style.opacity = '0';
-  subtitleT = 0;
   if (bossMan) {
     const en = bossMan;
     en.hp = en.maxHp; en.stun = 0; en.shoveLeft = 0; en.consecutiveHits = 0;
@@ -5458,7 +5489,7 @@ function startBossFight() {
   BOSS.round = 1; BOSS.room = 0;
   buildRoomLayout(0, 101, CONFIG.bossRoundCorpses, 4);
   beginRound(0, false);
-  bossSay('ダクトの男：また来たのか', 3.0);
+  say('ダクトの男：また来たのか', 3.0);
 }
 
 // 部屋 idx でラウンド開始。preempt = 先制攻撃が成立していたか
@@ -5515,7 +5546,7 @@ function bossDefeated(en) {
     BOSS.phase = 'CLEAR';
     setEnemyState(en, E.FLEE);
     en.fleeT = 0; en.fleeStage = 'rise';
-    bossSay('ダクトの男：……次は殺す', 4.0);
+    say('ダクトの男：……次は殺す', 4.0);
     showFeedback('BOSS CLEAR', '#ffd75e', 46);
     doFlash(0.5, '#ffe9a0'); addShake(0.7);
   } else {
@@ -5554,7 +5585,7 @@ function updateBossFlee(en, wdt) {
       BOSS.next = goRight ? d.b : d.a;
       addShake(0.4);
       doFlash(0.25, '#9ce8ff');
-      bossSay('ダクトの男：ついてこい', 2.6);
+      say('ダクトの男：ついてこい', 2.6);
     }
   } else if (en.fleeStage === 'travel') {
     const k = Math.min(1, en.fleeT / CONFIG.bossFleeTravel);
@@ -5567,10 +5598,10 @@ function updateBossFlee(en, wdt) {
       en.fleeStage = 'gone';
       if (BOSS.phase === 'CLEAR') {
         bossUi.hud.classList.add('hidden');
-        bossSay('ダクトの男は完全に逃げた —— ボス戦終了 / [B] でもう一度', 6.0);
+        say('ダクトの男は完全に逃げた —— ボス戦終了 / [B] でもう一度', 6.0);
       } else {
         BOSS.phase = 'WAIT';
-        bossSay('頭モード（Q長押し → Space）でダクトを抜けろ', 6.0);
+        say('頭モード（Q長押し → Space）でダクトを抜けろ', 6.0);
       }
     }
   }
@@ -5625,7 +5656,7 @@ function startHidePhase(idx) {
 
   bossUi.hud.classList.add('hidden');
   bossUi.count.classList.remove('hidden');
-  bossSay('ダクトの男：見つけてみろ', 3.2);
+  say('ダクトの男：見つけてみろ', 3.2);
 }
 
 // 隠れている死体に頭を生やす（唯一の手掛かり）
@@ -5651,7 +5682,7 @@ function bossFound(byAttack) {
   showFeedback('先制攻撃！', '#ffd75e', 46);
   doFlash(0.5, '#ffe9a0');
   addShake(0.6); addHitstop(0.22);
-  bossSay('ダクトの男：見つけたか', 2.4);
+  say('ダクトの男：見つけたか', 2.4);
   revealAndStart(true);
 }
 
@@ -5684,8 +5715,7 @@ function startJumpscare() {
   BOSS.phase = 'SCARE';
   BOSS.scareT = 0;
   bossUi.count.classList.add('hidden');
-  bossSay('', 0.1);
-  bossUi.sub.classList.add('hidden');
+  hideSubtitle();
 }
 
 function updateJumpscare(dt) {
@@ -5735,7 +5765,7 @@ function updateJumpscare(dt) {
       addShake(1.2); addHitstop(0.12);
       doFlash(0.65, '#ff4436');
       showFeedback('！！', '#ff6b5e', 72);
-      bossSay('ダクトの男：うしろだ', 2.2);
+      say('ダクトの男：うしろだ', 2.2);
     }
     bossUi.scare.style.opacity = String(0.25 + 0.5 * u);
   } else if (t < TU + HO) {
@@ -5807,7 +5837,7 @@ function updateBossState(en, wdt) {
     en.riseDone = false;
     setEnemyState(en, E.BOSS_RISE);
     showFeedback('腕を狙っている！', '#ff9c6a', 34);
-    bossSay('ダクトの男：その腕をよこせ', 1.6);
+    say('ダクトの男：その腕をよこせ', 1.6);
     addShake(0.18);
     return true;
   }
@@ -5890,7 +5920,7 @@ function bossArmCut(en) {
   addHitstop(0.24); addShake(0.8);
   doFlash(0.55, '#ff5a48');
   showFeedback(side[0] + ' ARM TAKEN', '#ff6b5e', 42);
-  bossSay('ダクトの男：もらっておく', 2.2);
+  say('ダクトの男：もらっておく', 2.2);
 }
 
 // 奪われた腕が男の肩へ飛んでいく
@@ -5916,13 +5946,6 @@ function updateStolenArms(dt) {
 function updateBoss(dt, rdt) {
   const en = bossMan;
   updateStolenArms(rdt);
-
-  // 字幕のフェード
-  if (subtitleT > 0) {
-    subtitleT -= rdt;
-    bossUi.sub.style.opacity = String(Math.min(1, subtitleT / 0.4));
-    if (subtitleT <= 0) bossUi.sub.classList.add('hidden');
-  }
 
   // 部屋Aに踏み込んだら自動でボス戦開始
   const idx = arenaRoomIndex();
@@ -5997,7 +6020,7 @@ function warpToBoss() {
   playerPos.set((ARENA.gate.x0 + ARENA.gate.x1) / 2, 0, ARENA.z1 + 3.0);
   yaw = Math.PI; pitch = 0;
   showFeedback('DUCT MAN', '#59e0ff', 40);
-  bossSay('入口の赤いラインを越えると始まる', 3.4);
+  say('入口の赤いラインを越えると始まる', 3.4);
 }
 
 createBossMan();
@@ -6171,7 +6194,7 @@ function demoClearWave() {
   DEMO.phase = (DEMO.next >= DEMO_WAVES.length) ? 'CLEAR' : 'OPEN';
   if (DEMO.phase === 'CLEAR') {
     showFeedback('ALL CLEAR', '#9ce8ff', 46);
-    bossSay('突き当りまで。[G] でハブへ戻る', 4.0);
+    say('突き当りまで。[G] でハブへ戻る', 4.0);
   } else {
     showFeedback('GATE OPEN', '#9ce8ff', 34);
   }
@@ -6189,7 +6212,7 @@ function startDemo() {
   DEMO.phase = 'OPEN';
   DEMO.next = 0; DEMO.wave = -1; DEMO.lockZ = null;
   showFeedback('DEMO STAGE', '#ffd75e', 42);
-  bossSay('前へ進め。湧いた敵を倒すまで奥の門は開かない', 3.6);
+  say('前へ進め。湧いた敵を倒すまで奥の門は開かない', 3.6);
 }
 
 function demoStop() {
@@ -6536,6 +6559,23 @@ const MANUAL_PAGES = [
       aCross(180, 96) +
       aMouse(180, 162, 0.9) +
       aArrow(205, 150, 243, 150, C_HI, 3) + aArrow(155, 150, 117, 150, C_HI, 3)),
+  },
+  {
+    cat: '基本', title: '目的とコンパス',
+    keys: [['Tab', '開く / 閉じる']],
+    desc: '画面上のコンパスの赤い丸がゴールの方角。中央の目盛りが正面、両端が真横。' +
+          'Tab で今の目的が左上に出る。もう一度押すと消える。',
+    art: () => aStage(
+      aRect(60, 30, 240, 34, 'rgba(0,0,0,0.55)') +
+      aRect(73, 35, 3, 24, '#f2f2f2') + aRect(284, 35, 3, 24, '#f2f2f2') +
+      aRect(179, 40, 2, 14, 'rgba(255,255,255,0.55)') +
+      '<circle cx="232" cy="47" r="13" fill="#ff6b6b" stroke="#000" stroke-width="1"/>' +
+      '<text x="232" y="52" fill="#fff" font-size="14" font-weight="bold" text-anchor="middle">G</text>' +
+      aArrow(196, 47, 214, 47, C_HI, 2) +
+      aKey(70, 150, 'Tab', true) +
+      aRect(110, 128, 150, 44, 'rgba(0,0,0,0.6)') + aRect(110, 128, 3, 44, '#ff6b6b') +
+      '<text x="122" y="145" fill="#ff8c82" font-size="10" letter-spacing="2">OBJECTIVE</text>' +
+      '<text x="122" y="163" fill="#eef1ea" font-size="13">ゴールを目指す</text>'),
   },
 
   /* --- 人間モード（拳） --- */
@@ -7213,6 +7253,82 @@ function updateRack(rdt) {
 }
 
 /* =========================================================
+   目的とコンパス
+   ・今の目的（文章）とゴールの位置は、状況（ハブ／ボス戦／デモ）から毎フレーム決める
+   ・目的は普段は隠れていて、Tabで左上に開閉する
+   ・コンパスは上中央。丸いアイコン(G)がゴールの方角を指す。
+     中央＝正面、両端の目盛り＝真横(±90°)。それより後ろは端に張り付いて薄くなる
+   ========================================================= */
+const objUi = {
+  panel: document.getElementById('objective'),
+  text: document.getElementById('objectiveText'),
+  goal: document.getElementById('compassGoal'),
+};
+let objectiveOpen = false;
+const _objGoal = new THREE.Vector3();
+const _objDir = new THREE.Vector3();
+
+function toggleObjective() {
+  objectiveOpen = !objectiveOpen;
+  objUi.panel.classList.toggle('hidden', !objectiveOpen);
+}
+
+// 今の目的。goal は _objGoal を書き換えて返す（ゴールがない場面は null）
+function currentObjective() {
+  const at = (x, z) => _objGoal.set(x, 0, z);
+  if (DEMO.active) {
+    if (DEMO.phase === 'FIGHT') {
+      return { text: '敵を全滅させて奥の門を開ける', goal: at(DEMO.cx, demoGateZ(DEMO.wave)) };
+    }
+    if (DEMO.phase === 'CLEAR') return { text: '突き当りまで進む', goal: at(DEMO.cx, demoEndZ()) };
+    return { text: '廊下を前へ進む', goal: at(DEMO.cx, demoSegZ(DEMO.next) - 2.5) };
+  }
+  const room = ARENA.rooms[BOSS.room];
+  const roomCenter = () => at((room.x0 + room.x1) / 2, (ARENA.z0 + ARENA.z1) / 2);
+  switch (BOSS.phase) {
+    case 'FIGHT':
+      return { text: 'ダクトの男を倒す', goal: _objGoal.copy(bossMan.group.position) };
+    case 'FLEE':
+      return { text: '逃げるダクトの男を追う',
+        goal: fleeHead.visible ? _objGoal.copy(fleeHead.position) : roomCenter() };
+    case 'WAIT': {
+      // 今いる部屋側のダクトの入口
+      const d = ARENA.ducts[Math.min(ARENA.ducts.length - 1, BOSS.room)];
+      return { text: '頭モード（Q長押し → Space）でダクトを抜け、ダクトの男を追う',
+        goal: at(d.a === BOSS.room ? d.x0 : d.x1, d.z) };
+    }
+    case 'HIDE':
+    case 'SCARE':
+      return { text: '頭の付いた死体を探し出す', goal: roomCenter() };
+    case 'CLEAR':
+      return { text: 'ボス戦は終わった（[B] でもう一度 / [G] でハブへ）', goal: null };
+    default:
+      // ハブ：ボスアリーナの入口（赤いライン）
+      return { text: 'ダクトの男の部屋へ向かう',
+        goal: at((ARENA.gate.x0 + ARENA.gate.x1) / 2, ARENA.z1 + 0.5) };
+  }
+}
+
+function updateObjectiveHud() {
+  const obj = currentObjective();
+  if (objUi.text.textContent !== obj.text) objUi.text.textContent = obj.text;
+
+  objUi.goal.classList.toggle('hidden', !obj.goal);
+  if (!obj.goal) return;
+  // 見ている方向（カメラ）を水平にしたものを正面として、ゴールが左右どちらに何度あるか
+  camera.getWorldDirection(_objDir);
+  const fx = _objDir.x, fz = _objDir.z;
+  const len = Math.hypot(fx, fz) || 1;
+  const from = (state === S.HEAD || state === S.POSSESS) ? headPos : playerPos;
+  const dx = obj.goal.x - from.x, dz = obj.goal.z - from.z;
+  // 右 = (-fz, fx)。右にあれば正
+  const ang = Math.atan2((dx * -fz + dz * fx) / len, (dx * fx + dz * fz) / len);
+  const k = Math.max(-1, Math.min(1, ang / (Math.PI / 2)));
+  objUi.goal.style.left = (50 + k * 44) + '%';     // 両端の目盛りは 6% / 94%
+  objUi.goal.classList.toggle('edge', Math.abs(ang) > Math.PI / 2);
+}
+
+/* =========================================================
    メインループ
    ========================================================= */
 updateArmVisuals();
@@ -7769,6 +7885,8 @@ function animate() {
   } else ui.feedback.style.opacity = '0';
 
   updatePlayerHud();
+  updateSubtitle(rdt);
+  updateObjectiveHud();
 
   // デバッグHUD：キャンセル受付中かどうかも出す（タイミングの確認用）
   ui.state.textContent = state + (player.guard ? '  [GUARD]' : '') +

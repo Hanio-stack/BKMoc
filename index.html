@@ -8,6 +8,14 @@
 </head>
 <body>
 
+<!-- 左上：目的（Tabで開閉）とデバッグHUD。縦に積むので目的を開くとデバッグHUDが下へずれる -->
+<div id="topLeft">
+<div id="objective" class="hidden">
+  <div class="obj-label">OBJECTIVE</div>
+  <div id="objectiveText">-</div>
+  <div class="obj-hint">[TAB] で閉じる</div>
+</div>
+
 <!-- デバッグHUD -->
 <div id="hud">
   <div>STATE: <span id="hudState">HUMAN</span></div>
@@ -15,6 +23,13 @@
   <div>Selected Target: <span id="hudTarget">NONE</span></div>
   <div>Parts: <span id="hudArms">0 air / 0 ground</span></div>
   <div>Enemy: <span id="hudEnemy">-</span></div>
+</div>
+</div>
+
+<!-- コンパス（上中央）。丸いアイコンがゴールの方角。中央の目盛り＝正面、両端＝真横 -->
+<div id="compass">
+  <i class="tick side l"></i><i class="tick mid"></i><i class="tick side r"></i>
+  <div id="compassGoal">G</div>
 </div>
 
 <!-- クロスヘア -->
