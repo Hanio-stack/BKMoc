@@ -1594,7 +1594,6 @@ const ui = {
   arms: document.getElementById('hudArms'),
   enemy: document.getElementById('hudEnemy'),
   slowOverlay: document.getElementById('slowOverlay'),
-  slowLabel: document.getElementById('slowLabel'),
   risingLabel: document.getElementById('risingLabel'),
   flash: document.getElementById('flash'),
   feedback: document.getElementById('feedback'),
@@ -7888,12 +7887,10 @@ function animate() {
 
   const risingActive = inRising && risingBlend > 0.25;
   ui.slowOverlay.classList.toggle('hidden', !(risingActive || slowTimer > 0));
-  ui.slowLabel.classList.toggle('hidden', !(risingActive || slowTimer > 0));
-  ui.risingLabel.classList.toggle('hidden', !(risingActive || headMode));
-  // 頭が潰れると頭・脊柱・脚が全部消えるので、常設の死亡表示がないと
+  // SLOW / RISING / HEAD などのモード名は出さない（スローは画面の縁の色で伝える）。
+  // 頭が潰れたときだけは頭・脊柱・脚が全部消えるので、DEAD を出さないと
   // 「何が起きたか」が画面から完全に消える
-  ui.risingLabel.textContent = (state === S.POSSESS) ? 'POSSESS'
-    : (headMode ? (headDead ? 'DEAD' : 'HEAD') : 'RISING');
+  ui.risingLabel.classList.toggle('hidden', !(headMode && headDead));
   ui.risingLabel.classList.toggle('dead', headMode && headDead);
 
 

@@ -142,16 +142,7 @@ canvas { display: block; }
   background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(40,90,110,0.28) 100%);
   mix-blend-mode: screen;
 }
-#slowLabel {
-  position: fixed; top: 140px; left: 50%;
-  transform: translateX(-50%);
-  font-size: 20px; letter-spacing: 0.9em; padding-left: 0.9em;
-  color: rgba(180, 225, 240, 0.9);
-  text-shadow: 0 0 12px rgba(120, 200, 230, 0.6);
-  z-index: 20; pointer-events: none;
-}
-
-/* ---- ライジングモード表示 ---- */
+/* ---- 頭が潰れたときの表示（DEAD）---- */
 #risingLabel {
   position: fixed; top: 168px; left: 50%;
   transform: translateX(-50%);
