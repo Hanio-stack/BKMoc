@@ -560,6 +560,8 @@ const CONFIG = {
      腕奪取を足したもの。3部屋を逃げながら3ラウンド戦う。            */
   bossHpMul: 3,                  // 通常の敵の何倍のHPか（パンチ15発ぶん。腕2本では足りない＝奪い合いが前提）
   bossStunThreshold: 125,        // スタンに必要な量（通常の敵は enemyStunThreshold=100）
+  bossStunTakenMul: 0.6,         // 受けるスタン値の倍率。パンチ(40)が24になり、約6発でスタン。
+                                 // 1.0 だと4発（1.5秒）で崩れて、男が一度も攻撃しないまま腕を取られる
   bossPoiseHits: 3,              // のけぞるのはこの回数に1回だけ。それ以外は殴られながらも動く
                                  // （毎回のけぞると殴り続けるだけで何もさせずに倒せてしまう）。
                                  // 攻撃の予備動作中はのけぞらない（止めるならキック）
@@ -2556,7 +2558,7 @@ function applyStun(en, v) {
     en.stun = Math.min(stunMax(en) - 1, en.stun + v);
     return;
   }
-  en.stun += v;
+  en.stun += en.boss ? v * CONFIG.bossStunTakenMul : v;
   if (en.stun >= stunMax(en)) {
     en.stun = stunMax(en);
     // アーマー中はその場で崩れない。溜まったスタンは技を出し切ってから効く
