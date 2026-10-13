@@ -558,7 +558,11 @@ const CONFIG = {
   /* --- ボス：ダクトの男 ---
      通常の敵と同じAIをベースに、キックによるキャンセルとライジングでの
      腕奪取を足したもの。3部屋を逃げながら3ラウンド戦う。            */
-  bossHpMul: 3,                  // 通常の敵の何倍のHPか
+  bossHpMul: 3,                  // 通常の敵の何倍のHPか（パンチ15発ぶん。腕2本では足りない＝奪い合いが前提）
+  bossStunThreshold: 125,        // スタンに必要な量（通常の敵は enemyStunThreshold=100）
+  bossPoiseHits: 3,              // のけぞるのはこの回数に1回だけ。それ以外は殴られながらも動く
+                                 // （毎回のけぞると殴り続けるだけで何もさせずに倒せてしまう）
+  bossStunDuration: 5.0,         // 通常スタンの長さ(s)。腕を1〜2本斬れる猶予
   bossKickChance: 0.38,          // プレイヤーがパンチを出したときキックで潰してくる確率
   bossKickCooldown: 2.6,         // 次にキックで潰してくるまでの最短(s)
   bossKickStartup: 0.30,         // 足を上げてから当たるまで。
@@ -570,13 +574,39 @@ const CONFIG = {
   bossRiseWindup: 1.15,          // 腕を狙っている時間。この間にドッジ／キック／離脱する
   bossRiseRange: 3.6,            // この距離から出ると外れる
   bossRiseRecover: 0.75,
-  bossStolenArmDamage: 4,        // 奪った腕1本ごとに一撃が増える
+  bossRiseJustWindow: 0.26,      // 振り抜き直前のこの時間は印が白く光る＝ジャストドッジ／ジャストキックの窓
+  bossStolenArmDamage: 4,        // 奪って付けている腕1本ごとに一撃が増える
+  // --- 奪った腕の使い道（装着 or 捕食）---
+  bossEatTime: 5.0,              // 1本食べ終わるまで(s・ワールド時間)。ライジング中はスローで伸びる
+  bossEatHeal: 0.12,             // 1本食べ切ったときの回復（最大HP比）。食べた割合ぶんだけ回復
+  bossEatHealCapRound: 0.24,     // 1ラウンドで捕食によって回復できる上限（最大HP比）
+  bossEatCooldown: 12.0,         // 次に「食べる」を選べるまで(s)
+  bossEatPreferHp: 0.70,         // HPがこの割合を下回ったら、装着より捕食を選びやすくなる
+  bossEatLoss: 0.20,             // 食べ切る直前に取り返したときに減る耐久（腕の最大HP比）。進み具合に比例
+  bossEatHitLineCd: 3.0,         // 「食事中だぞ！」を言い直すまでの最短(s)
+  // --- 奪った腕の種類による攻撃の違い ---
+  bossGunRange: 13.0,            // 銃腕を付けていると、この距離まで撃ってくる
+  bossGunMinRange: 3.2,          // これより近いと撃たずに殴りに来る
+  bossGunWindup: 0.75,           // 構えてから撃つまで(s)。最後の bossRiseJustWindow 秒は白く光る
+  bossGunRecover: 0.45,
+  bossGunCooldown: 3.4,
+  bossBulletSpeed: 15.0,         // プレイヤーの弾(60)よりずっと遅い＝見てから避けられる
+  bossBulletDamage: 9,
+  bossBulletRadius: 0.42,
+  bossTentReach: 1.3,            // 触手腕を付けていると、通常攻撃の間合いがこれだけ伸びる(m)
+  bossTentPull: 0.9,             // 触手腕の攻撃が当たると、これだけ手前へ引き寄せられる(m)
+  // --- HP0 → フィニッシャースタン → 決着 ---
+  bossFinDash: 0.20,             // 蹴りのフィニッシャー：男の前まで踏み込む(s)
+  bossFinImpact: 0.32,           // 踏み込み開始から蹴りが当たるまで(s)
+  bossFinTotal: 0.80,            // フィニッシャー全体（この間は無敵・キャンセル不可）(s)
+  bossKickedSpeed: 11.0,         // 蹴り飛ばされた体の初速(m/s)
+  bossKickedTime: 0.65,          // 体が飛んで止まるまで(s)。途中で頭が抜けてダクトへ逃げる
+  bossHeadPopAt: 0.16,           // 蹴られてから頭が体から抜けるまで(s)
   bossHideTime: 10.0,            // かくれんぼの制限時間(s)
   bossPreemptiveDamage: 0.40,    // 先制攻撃で削れる割合（最大HP比）
   bossJumpscareDelay: 1.35,      // カウント0からジャンプスケアまでの「間」(s)
   bossJumpscareTurn: 0.20,       // カメラが後ろを向くまで(s)
   bossJumpscareHold: 1.05,       // 顔アップの長さ(s)
-  bossFleeRise: 0.55,            // 倒したあと首が伸びるまで(s)
   bossFleeTravel: 1.6,           // 頭がダクトへ飛び込むまで(s)
   bossRoundCorpses: 14,          // 第1ラウンドの部屋に置く死体
   bossHideCorpses: 22,           // かくれんぼ部屋に置く死体
@@ -627,9 +657,17 @@ const E = {
   // --- ダクトの男だけが使う状態 ---
   BOSS_KICK: 'BOSS_KICK',   // プレイヤーの攻撃をキックで潰しに来ている
   BOSS_RISE: 'BOSS_RISE',   // ライジングでプレイヤーの腕を狙っている
+  BOSS_SHOOT: 'BOSS_SHOOT', // 奪った銃腕でプレイヤーを撃とうとしている
+  BOSS_EAT: 'BOSS_EAT',     // 奪った腕を食べている（動かない・攻撃しない。腕は取り返せる）
+  BOSS_DOWN: 'BOSS_DOWN',   // HP0のフィニッシャースタン。首を斬るか蹴り飛ばすまで動かない
+  BOSS_KICKED: 'BOSS_KICKED', // フィニッシャーで蹴り飛ばされて飛んでいる（途中で頭が抜ける）
   HIDDEN: 'HIDDEN',         // 死体のフリをして隠れている
-  FLEE: 'FLEE',             // 倒されて頭モードでダクトへ逃げている
+  FLEE: 'FLEE',             // 頭がダクトへ逃げた（体はもう死体。本体は見えないまま待機）
 };
+
+// スタンの閾値と長さ。ダクトの男だけ通常の敵より少し硬い
+function stunMax(en) { return en.boss ? CONFIG.bossStunThreshold : CONFIG.enemyStunThreshold; }
+function stunDuration(en) { return en.boss ? CONFIG.bossStunDuration : CONFIG.enemyStunDuration; }
 
 const EYE = 1.7;
 const NECK_BASE = 1.52; // 体側の首の付け根
@@ -1163,7 +1201,9 @@ function armsFromEnemy(en) {
   const out = {};
   for (const key of ['LEFT', 'RIGHT']) {
     const attached = en.parts[key].parent === en.pivotRoot;
-    out[key] = attached ? makeArmState(en.parts[key].userData.kind, { swapped: true }) : null;
+    const carried = en.parts[key].userData.armState;   // ダクトの男が奪って付けていた腕
+    out[key] = !attached ? null
+      : (carried ? cloneArmState(carried) : makeArmState(en.parts[key].userData.kind, { swapped: true }));
   }
   return out;
 }
@@ -1489,6 +1529,9 @@ document.addEventListener('mousedown', (e) => {
     } else if (selectedTarget && selectedTarget.kind === 'rackArm') {
       triggerLegSwing();
       takeRackArm(selectedTarget, side);
+    } else if (selectedTarget && selectedTarget.kind === 'bossEat') {
+      triggerLegSwing();
+      bossEatRetrieve(selectedTarget.enemy, side);
     }
     return;
   }
@@ -1711,7 +1754,18 @@ function updatePlayerHud() {
 const PLAYER_SPEAKER = '主人公';
 const subtitleEl = document.getElementById('subtitle');
 let subtitleT = 0;
-function say(text, dur) {
+// 続けて出す字幕（食レポなど）。say() は割り込み、sayQueue() は今の字幕のあとに続ける
+let subtitleQueue = [];
+// keepQueue=true なら、割り込んだあとに続きの字幕を残す（食レポ中の「食事中だぞ！」など）
+function say(text, dur, keepQueue) {
+  if (!keepQueue) subtitleQueue = [];
+  showSubtitleNow(text, dur);
+}
+function sayQueue(lines) {
+  for (const l of lines) subtitleQueue.push(l);
+  if (subtitleT <= 0) { const n = subtitleQueue.shift(); showSubtitleNow(n[0], n[1]); }
+}
+function showSubtitleNow(text, dur) {
   subtitleEl.textContent = '';
   const m = /^([^：]{1,12})：(.*)$/.exec(text);
   if (m) {
@@ -1728,11 +1782,17 @@ function say(text, dur) {
 }
 function hideSubtitle() {
   subtitleT = 0;
+  subtitleQueue = [];
   subtitleEl.classList.add('hidden');
 }
 function updateSubtitle(rdt) {
   if (subtitleT <= 0) return;
   subtitleT -= rdt;
+  // 続きがあるときはフェードさせずに差し替える（点滅して読みにくくならないように）
+  if (subtitleQueue.length) {
+    if (subtitleT <= 0) { const n = subtitleQueue.shift(); showSubtitleNow(n[0], n[1]); }
+    return;
+  }
   subtitleEl.style.opacity = String(Math.min(1, subtitleT / 0.4));
   if (subtitleT <= 0) subtitleEl.classList.add('hidden');
 }
@@ -1867,7 +1927,8 @@ function findTargetEnemy(range, angleDeg) {
   const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
   let best = null, bestD = Infinity;
   for (const en of enemies) {
-    if (en.state === E.DEAD || en.state === E.FLEE) continue;
+    if (en.state === E.DEAD || en.state === E.FLEE || en.state === E.BOSS_KICKED) continue;
+    if (en.boss && !en.group.visible && en.state !== E.HIDDEN) continue;   // 退避中の男
     const to = en.group.position.clone().sub(eye); to.y = 0;
     const d = to.length();
     if (d > range) continue;
@@ -2204,7 +2265,15 @@ function triggerLegSwing() {
 }
 
 function isJustTiming(en) {
-  return en.state === E.WINDUP && en.t >= CONFIG.enemyWindup - CONFIG.enemyJustWindow;
+  if (en.state === E.WINDUP) return en.t >= CONFIG.enemyWindup - CONFIG.enemyJustWindow;
+  // ダクトの男の腕狩り／射撃も、振り抜き直前は白く光る＝ジャストドッジ・ジャストキックの窓
+  if (en.state === E.BOSS_RISE && !en.riseDone) {
+    return en.t >= CONFIG.bossRiseWindup - CONFIG.bossRiseJustWindow && en.t < CONFIG.bossRiseWindup;
+  }
+  if (en.state === E.BOSS_SHOOT && !en.shotDone) {
+    return en.t >= CONFIG.bossGunWindup - CONFIG.bossRiseJustWindow && en.t < CONFIG.bossGunWindup;
+  }
+  return false;
 }
 
 function resolveAttack(atk) {
@@ -2231,6 +2300,8 @@ function resolvePunch(en, side) {
     bossFound(true);
     return;
   }
+  // HP0 の男には何を当てても蹴りのフィニッシャーになる（腕は削れない）
+  if (bossFinisherHit(en)) return;
   const purged = player.arms[side].purged;
   const dmg = purged ? CONFIG.purgedArmDamage : CONFIG.attackDamage;
   const stun = purged ? CONFIG.purgedArmStun : CONFIG.attackStun;
@@ -2283,13 +2354,28 @@ function resolvePunch(en, side) {
 function resolveKick(en, atk) {
   if (en.state === E.DEAD) return;
   if (en.boss && en.state === E.HIDDEN) { bossFound(true); return; }
+  if (bossFinisherHit(en)) return;
 
   // 押した瞬間にジャスト窓に入っていたなら、
   // 発生までに敵が ACTIVE へ進んでいてもジャストキックにする。
   const wasJust = (atk && atk.justHits) ? atk.justHits.has(en) : isJustTiming(en);
+  // ダクトの男の腕狩り・射撃はキックだけが止められる（振り抜いたあとは止まらない）
+  if ((en.state === E.BOSS_RISE && !en.riseDone) || (en.state === E.BOSS_SHOOT && !en.shotDone)) {
+    const wasRise = (en.state === E.BOSS_RISE);
+    applyStun(en, wasJust ? CONFIG.kickJustStun : CONFIG.kickInterruptStun);
+    en.riseDone = true; en.shotDone = true;
+    if (wasRise) en.riseCd = CONFIG.bossRiseCooldown * 0.6;
+    else en.gunCd = CONFIG.bossGunCooldown;
+    enterHitReact(en, wasJust ? 1.5 : 1.3, true);   // アーマーを貫く
+    addHitstop(wasJust ? CONFIG.hitstopJustKick : CONFIG.hitstopInterrupt);
+    addShake(wasJust ? CONFIG.shakeJustKick : CONFIG.shakeInterrupt);
+    doFlash(wasJust ? 0.55 : 0.25, wasJust ? '#ffe9a0' : '#9ce8ff');
+    en.consecutiveHits = 0;
+    return;
+  }
   if (wasJust) {
     applyStun(en, CONFIG.kickJustStun);
-    enterHitReact(en, 1.5);
+    enterHitReact(en, 1.5, true);      // ジャストキックは必ず崩す（ダクトの男のアーマーも貫く）
     addHitstop(CONFIG.hitstopJustKick);
     addShake(CONFIG.shakeJustKick);
     doFlash(0.55, '#ffe9a0');
@@ -2301,24 +2387,12 @@ function resolveKick(en, atk) {
   switch (en.state) {
     case E.WINDUP: {
       applyStun(en, CONFIG.kickInterruptStun);
-      enterHitReact(en, 1.2);
+      enterHitReact(en, 1.2, true);    // 予備動作へのキックは必ず止める
       addHitstop(CONFIG.hitstopInterrupt);
       addShake(CONFIG.shakeInterrupt);
       doFlash(0.2, '#ffd9a0');
       showFeedback('INTERRUPT', '#ffb45e', 34);
       checkEnemyEscape(en);
-      break;
-    }
-    case E.BOSS_RISE: {
-      // 腕を刈りに来ているライジングは、キックだけが止められる
-      applyStun(en, CONFIG.kickInterruptStun);
-      en.riseDone = true;
-      en.riseCd = CONFIG.bossRiseCooldown * 0.6;
-      enterHitReact(en, 1.3, true);   // アーマーを貫く
-      addHitstop(CONFIG.hitstopInterrupt);
-      addShake(CONFIG.shakeInterrupt);
-      doFlash(0.25, '#9ce8ff');
-      showFeedback('ARM SAVED!', '#9ce8ff', 38);
       break;
     }
     case E.ACTIVE:
@@ -2450,6 +2524,11 @@ function finisherCrush(atk) {
    ========================================================= */
 function applyDamage(en, dmg) {
   if (en.state === E.DEAD || en.state === E.FLEE) return;
+  // フィニッシャースタン中・蹴り飛ばされ中のダクトの男はもう削れない（とどめ待ち）
+  if (en.state === E.BOSS_DOWN || en.state === E.BOSS_KICKED || en.state === E.HIDDEN) return;
+  if (en.boss && en.state === E.BOSS_EAT && dmg > 0) {
+    bossLine('eatHit', 'ダクトの男：食事中だぞ！', 1.4, CONFIG.bossEatHitLineCd, true);
+  }
   en.hp -= dmg;
   en.hitFlash = 0.12;
   if (en.hp <= 0) {
@@ -2461,21 +2540,23 @@ function applyDamage(en, dmg) {
 
 function applyStun(en, v) {
   if (en.state === E.DEAD || en.state === E.STUNNED || en.state === E.GRABBED) return;
+  if (en.state === E.BOSS_DOWN || en.state === E.BOSS_KICKED || en.state === E.FLEE ||
+      en.state === E.HIDDEN) return;
   // 投げられて飛んでいる間は崩れない。投げの着地で改めてスタンさせる
   if (en.state === E.THROWN) return;
   // 触手で拘束中も崩れない（位置を触手側が持っているので、ここでスタン姿勢に
   // 入れると拘束が壊れる）。ただし溜まったスタンは残す＝もう片方の腕で
   // 削ったぶんが、離した／投げた後の「崩れる」に繋がる
   if (en.state === E.TETHER) {
-    en.stun = Math.min(CONFIG.enemyStunThreshold - 1, en.stun + v);
+    en.stun = Math.min(stunMax(en) - 1, en.stun + v);
     return;
   }
   en.stun += v;
-  if (en.stun >= CONFIG.enemyStunThreshold) {
-    en.stun = CONFIG.enemyStunThreshold;
+  if (en.stun >= stunMax(en)) {
+    en.stun = stunMax(en);
     // アーマー中はその場で崩れない。溜まったスタンは技を出し切ってから効く
     // （updateBossState が技の終わりで拾う）
-    if (en.state === E.BOSS_KICK || en.state === E.BOSS_RISE) return;
+    if (en.state === E.BOSS_KICK || en.state === E.BOSS_RISE || en.state === E.BOSS_SHOOT) return;
     enterStun(en);
   }
 }
@@ -2489,7 +2570,17 @@ function enterHitReact(en, scale, force) {
   // これが無いと、パンチの発生(0.08s)がキックの発生(0.22s)より速いので、
   // 潰しに来たキックが必ず自分のパンチで潰し返され、一度も成立しない。
   // 崩せるのはキック（resolveKick が force で呼ぶ）だけ
-  if ((en.state === E.BOSS_KICK || en.state === E.BOSS_RISE) && !force) return;
+  if ((en.state === E.BOSS_KICK || en.state === E.BOSS_RISE || en.state === E.BOSS_SHOOT ||
+       en.state === E.BOSS_EAT) && !force) return;
+  // 食べている男は殴られても食べ続ける（その間に殴るか、腕を取り返すかを選ばせる）
+  if (en.state === E.BOSS_DOWN || en.state === E.BOSS_KICKED || en.state === E.FLEE ||
+      en.state === E.HIDDEN) return;
+  // ダクトの男は数発に1回しかのけぞらない（キックなど force は必ず通る）
+  if (en.boss && !force) {
+    en.poise = (en.poise || 0) + 1;
+    if (en.poise < CONFIG.bossPoiseHits) return;
+    en.poise = 0;
+  }
   en.hitReactScale = scale || 1;
   setEnemyState(en, E.HIT);
   const away = en.group.position.clone().sub(playerPos); away.y = 0;
@@ -2513,7 +2604,8 @@ function shoveAwayFrom(src) {
     if (en.state === E.DEAD || en.state === E.GRABBED ||
         en.state === E.TETHER || en.state === E.THROWN ||
         en.state === E.HIDDEN || en.state === E.FLEE ||
-        en.state === E.BOSS_KICK || en.state === E.BOSS_RISE) continue;
+        en.state === E.BOSS_KICK || en.state === E.BOSS_RISE || en.state === E.BOSS_SHOOT ||
+        en.state === E.BOSS_EAT || en.state === E.BOSS_DOWN || en.state === E.BOSS_KICKED) continue;
     _shoveAway.copy(en.group.position).sub(src.group.position); _shoveAway.y = 0;
     const d = _shoveAway.length();
     if (d > CONFIG.stunShoveRadius) continue;
@@ -2574,7 +2666,8 @@ function killEnemy(en) {
 function checkEnemyEscape(en) {
   if (en.state === E.DEAD || en.state === E.STUNNED || en.state === E.GRABBED) return;
   if (en.state === E.TETHER || en.state === E.THROWN) return;
-  if (en.state === E.BOSS_KICK || en.state === E.BOSS_RISE ||
+  if (en.state === E.BOSS_KICK || en.state === E.BOSS_RISE || en.state === E.BOSS_SHOOT ||
+      en.state === E.BOSS_EAT || en.state === E.BOSS_DOWN || en.state === E.BOSS_KICKED ||
       en.state === E.HIDDEN || en.state === E.FLEE) return;
   en.consecutiveHits++;
   if (en.consecutiveHits >= CONFIG.enemyDodgeForceHits || Math.random() < CONFIG.enemyDodgeChance) {
@@ -2601,7 +2694,7 @@ function updateEnemy(en, wdt, rdt) {
   if (en.smashCd > 0) en.smashCd -= rdt;   // 触手の衝突クールダウンは実時間
   if (en.state !== E.STUNNED && en.state !== E.DEAD && en.state !== E.GRABBED &&
       en.state !== E.TETHER && en.state !== E.THROWN &&
-      en.state !== E.BOSS_KICK && en.state !== E.BOSS_RISE) {
+      en.state !== E.BOSS_KICK && en.state !== E.BOSS_RISE && en.state !== E.BOSS_SHOOT) {
     // アーマー中は減らさない。止められない技の最中に入れたスタンが
     // そのまま蒸発すると、殴り返す意味が完全に無くなる
     en.stun = Math.max(0, en.stun - CONFIG.enemyStunDecay * wdt);
@@ -2612,7 +2705,8 @@ function updateEnemy(en, wdt, rdt) {
   const toPlayer = playerPos.clone().sub(en.group.position); toPlayer.y = 0;
   const dist = toPlayer.length();
   if (dist > 0.001 && en.state !== E.DEAD && en.state !== E.THROWN &&
-      en.state !== E.HIDDEN && en.state !== E.FLEE) {
+      en.state !== E.HIDDEN && en.state !== E.FLEE &&
+      en.state !== E.BOSS_DOWN && en.state !== E.BOSS_KICKED) {
     const targetYaw = Math.atan2(toPlayer.x, toPlayer.z);
     en.group.rotation.y += (targetYaw - en.group.rotation.y) * Math.min(1, wdt * 6);
   }
@@ -2641,10 +2735,11 @@ function updateEnemy(en, wdt, rdt) {
         } else setEnemyStateSoft(en, E.IDLE);
         break;
       }
-      if (dist > CONFIG.enemyAttackRange) {
+      const reach = attackRangeOf(en);
+      if (dist > reach) {
         setEnemyStateSoft(en, E.MOVE);
         if (!enemiesHalted()) {
-          const step = Math.min(CONFIG.enemyMoveSpeed * wdt, dist - CONFIG.enemyAttackRange + 0.05);
+          const step = Math.min(CONFIG.enemyMoveSpeed * wdt, dist - reach + 0.05);
           en.group.position.add(toPlayer.normalize().multiplyScalar(step));
         }
       } else {
@@ -2680,7 +2775,7 @@ function updateEnemy(en, wdt, rdt) {
     }
     case E.STUNNED:
       // ライジング中はスタンが解けない（切っている途中で演出が切れるのを防ぐ）
-      if (state === S.HUMAN && en.t >= CONFIG.enemyStunDuration) {
+      if (state === S.HUMAN && en.t >= stunDuration(en)) {
         en.stun = 0; en.consecutiveHits = 0; en.cooldown = 1.0;
         setEnemyState(en, E.IDLE);
       }
@@ -2704,13 +2799,24 @@ function updateEnemy(en, wdt, rdt) {
 
 function setEnemyStateSoft(en, s) { if (en.state !== s) { en.state = s; en.t = 0; } }
 
+// 通常攻撃の間合い。触手腕を付けたダクトの男だけ伸びる
+function attackRangeOf(en) {
+  return CONFIG.enemyAttackRange + (en.boss && bossArmCount(en, ARM.TENTACLE) > 0 ? CONFIG.bossTentReach : 0);
+}
+
 function hitPlayer(en) {
-  if (playerPos.distanceTo(en.group.position) > CONFIG.enemyAttackRange + 0.8) return;
+  if (playerPos.distanceTo(en.group.position) > attackRangeOf(en) + 0.8) return;
   if (player.invuln > 0) {
     if (!inFinisher()) showFeedback('DODGE', '#9ce8ff', 24);  // 掴み中の無敵は無言
     return;
   }
   if (damagePlayer(CONFIG.enemyDamageToPlayer + (en.bonusDamage || 0)) === 'guard') return;
+  // 触手腕で殴られると手前へ引き寄せられる（逃げても間合いに戻される）
+  if (en.boss && bossArmCount(en, ARM.TENTACLE) > 0 && state === S.HUMAN) {
+    const to = en.group.position.clone().sub(playerPos); to.y = 0;
+    const d = to.length();
+    if (d > 1.2) playerPos.addScaledVector(to.divideScalar(d), Math.min(CONFIG.bossTentPull, d - 1.2));
+  }
   doFlash(0.4, '#ff3b30');
   addShake(0.3);
   addHitstop(0.05);
@@ -2810,8 +2916,39 @@ function updateEnemyVisual(en, wdt) {
       const arm = en.parts[sd];
       if (arm.parent === p) arm.rotation.x += (0 - arm.rotation.x) * Math.min(1, wdt * 8);
     }
-  } else if (en.state === E.HIDDEN || en.state === E.FLEE) {
-    // 姿勢はボス側（かくれんぼ／ジャンプスケア／逃走）が持つので触らない
+  } else if (en.state === E.BOSS_SHOOT) {
+    // 銃腕を前へ構える。撃った反動で少しのけぞる
+    const k = Math.min(1, en.t / (CONFIG.bossGunWindup * 0.5));
+    const kick = (en.shotDone && en.t >= CONFIG.bossGunWindup)
+      ? Math.max(0, 1 - (en.t - CONFIG.bossGunWindup) / 0.2) : 0;
+    p.rotation.x += (-0.08 - 0.25 * kick - p.rotation.x) * Math.min(1, wdt * 14);
+    p.rotation.z = 0; p.position.y = 0;
+    for (const sd of ['LEFT', 'RIGHT']) {
+      const arm = en.parts[sd];
+      if (arm.parent !== p) continue;
+      const aim = arm.userData.kind === ARM.GUN ? -1.5 * k : 0;
+      arm.rotation.x += (aim - arm.rotation.x) * Math.min(1, wdt * 14);
+    }
+  } else if (en.state === E.BOSS_EAT) {
+    // 両手で腕を口元へ運んで噛む。うつむいて頭が上下する
+    p.rotation.x += (0.18 - p.rotation.x) * Math.min(1, wdt * 8);
+    p.rotation.z = Math.sin(worldTime * 2.2) * 0.03;
+    p.position.y += (0 - p.position.y) * Math.min(1, wdt * 8);
+    for (const sd of ['LEFT', 'RIGHT']) {
+      const arm = en.parts[sd];
+      if (arm.parent === p) arm.rotation.x += (-1.75 - arm.rotation.x) * Math.min(1, wdt * 10);
+    }
+  } else if (en.state === E.BOSS_DOWN) {
+    // 膝をついて動かない。首と腕を差し出すように前のめり
+    p.rotation.x += (0.55 - p.rotation.x) * Math.min(1, wdt * 6);
+    p.rotation.z = Math.sin(worldTime * 2.5 + en.swayPhase) * 0.05;
+    p.position.y += (-0.42 - p.position.y) * Math.min(1, wdt * 6);
+    for (const sd of ['LEFT', 'RIGHT']) {
+      const arm = en.parts[sd];
+      if (arm.parent === p) arm.rotation.x += (0.25 - arm.rotation.x) * Math.min(1, wdt * 6);
+    }
+  } else if (en.state === E.HIDDEN || en.state === E.FLEE || en.state === E.BOSS_KICKED) {
+    // 姿勢はボス側（かくれんぼ／ジャンプスケア／逃走／蹴り飛ばし）が持つので触らない
   } else {
     p.rotation.x += (0 - p.rotation.x) * Math.min(1, wdt * 8);
     p.rotation.z += (sway - p.rotation.z) * Math.min(1, wdt * 6);
@@ -2826,7 +2963,7 @@ function updateEnemyVisual(en, wdt) {
 
   // スタン中の頭の赤い光（人間モード＋一定距離以内のみ）
   let glowOpacity = 0;
-  if (en.state === E.STUNNED && !en.headless) {
+  if ((en.state === E.STUNNED || en.state === E.BOSS_DOWN) && !en.headless) {
     // 赤い光 = この距離ならQでライジングに入れる、という合図
     const near = playerPos.distanceTo(en.group.position) <= CONFIG.risingInteractRange;
     if (near || state !== S.HUMAN) {
@@ -3327,6 +3464,14 @@ function cutPart(entry, side) {
   const pivot = entry.pivot;
   if (!pivot || !pivot.parent) return;
   const en = entry.enemy;
+  // ダクトの男の首は HP0（フィニッシャースタン）のときだけ斬れる。
+  // 斬ると頭がダクトへ逃げてラウンドが終わる（頭は消えない。次のラウンドでまた付く）
+  if (en.boss && entry.key === 'HEAD') {
+    if (en.state === E.BOSS_DOWN) bossHeadCut(en);
+    return;
+  }
+  // 男が付けていた奪った腕は、奪われたときの耐久のまま戻る（全快しない・種類も変わらない）
+  const carried = (en.boss && pivot.userData.armState) ? cloneArmState(pivot.userData.armState) : null;
 
   pivot.updateWorldMatrix(true, false);
   const wp = new THREE.Vector3(), wq = new THREE.Quaternion();
@@ -3367,7 +3512,17 @@ function cutPart(entry, side) {
     // 切断でスタン時間を仕切り直し、連続で切る猟予を作る
     if (en.state === E.STUNNED) en.t = 0;
     // 浮かせずにそのまま自分の体へ。拾う手間と滞空の混雑をなくす。
-    startArmGraft(pivot, side || entry.key, wp);
+    startArmGraft(pivot, side || entry.key, wp, carried);
+    if (en.boss) {
+      // 斬られた腕のぶん、一撃の上乗せも減る
+      let stolen = 0;
+      for (const k of ['LEFT', 'RIGHT']) {
+        const p = en.parts[k];
+        if (p.parent === en.pivotRoot && p.userData.armState) stolen++;
+      }
+      en.stolen = stolen;
+      en.bonusDamage = stolen * CONFIG.bossStolenArmDamage;
+    }
     addHitstop(0.10);
     addShake(0.20);
     doFlash(0.20, '#ffd0b0');
@@ -3593,7 +3748,8 @@ function tentFindHit(origin, dir, len) {
   let best = null, bestT = Infinity, bestY = 1.45;
   for (const en of enemies) {
     if (en.state === E.DEAD || en.state === E.FLEE || en.state === E.DODGE ||
-        en.state === E.TETHER || en.state === E.THROWN) continue;
+        en.state === E.TETHER || en.state === E.THROWN || en.state === E.BOSS_KICKED) continue;
+    if (en.boss && !en.group.visible && en.state !== E.HIDDEN) continue;
     for (const by of TENT_BODY_Y) {
       _tChest.copy(en.group.position); _tChest.y += by;
       _tChest.sub(origin);
@@ -3682,7 +3838,7 @@ function tentSmashInto(e, vel, speed) {
       o.throwVel.y = Math.max(o.throwVel.y, 2.4);
       clampKnockVel(o.throwVel);
       o.throwSpin = 5 + speed * 0.4;
-      o.stun = CONFIG.enemyStunThreshold;         // 着地で必ずスタンする
+      o.stun = stunMax(o);                        // 着地で必ずスタンする
       o.consecutiveHits = 0;
       o.activeHitDone = false;
       setEnemyState(o, E.THROWN);
@@ -3722,6 +3878,16 @@ function updateTentacle(rdt) {
     if (hitstop > 0) return;        // ヒットストップ中は伸びも止める
     h.len = Math.min(CONFIG.tentMaxRange, h.len + CONFIG.tentExtendSpeed * rdt);
     const hit = tentFindHit(_tOrigin, _tDir, h.len);
+    if (hit && hit.enemy.boss &&
+        (hit.enemy.state === E.HIDDEN || hit.enemy.state === E.BOSS_DOWN)) {
+      // 死体のフリをしている男を刺した＝見つけた / HP0 の男を刺した＝蹴りのフィニッシャー。
+      // どちらも拘束はしない（触手は引っ込める）
+      const e = hit.enemy;
+      h.phase = 'retract';
+      if (e.state === E.HIDDEN) { damageArm(h.side, CONFIG.tentStabCost); bossFound(true); }
+      else bossFinisherHit(e);
+      return;
+    }
     if (hit) {
       const e = hit.enemy;
       h.enemy = e;
@@ -3741,7 +3907,7 @@ function updateTentacle(rdt) {
       e.smashCd = 0;
       setEnemyState(e, E.TETHER);
       applyDamage(e, CONFIG.tentStabDamage);
-      e.stun = Math.min(CONFIG.enemyStunThreshold - 1, e.stun + CONFIG.tentStabStun);
+      e.stun = Math.min(stunMax(e) - 1, e.stun + CONFIG.tentStabStun);
       damageArm(h.side, CONFIG.tentStabCost);
       addHitstop(CONFIG.tentStabHitstop);
       addShake(CONFIG.tentStabShake);
@@ -3847,7 +4013,7 @@ function updateTentacle(rdt) {
         const dmg = Math.min(CONFIG.tentGroundDamageMax, fall * CONFIG.tentGroundDamage);
         applyDamage(e, dmg);
         // 拘束中はスタンで状態を奪えない（位置を触手側が持っている）ので上限の手前で止める
-        e.stun = Math.min(CONFIG.enemyStunThreshold - 1, e.stun + CONFIG.tentGroundStun);
+        e.stun = Math.min(stunMax(e) - 1, e.stun + CONFIG.tentGroundStun);
         // 叩きつけた勢いで少し跳ねる。横の勢いは殺さないので、そのまま次の振りへ繋がる。
         // 跳ね上がりだけ上限を見る（拘束中の横の速さは元から tentMaxSpeed で止まっている）
         vel.y = Math.min(CONFIG.knockMaxUp, fall * CONFIG.tentGroundBounce);
@@ -3903,8 +4069,8 @@ function releaseTentacle() {
       e.group.position.y = 0;
       e.tetherVel.set(0, 0, 0);
       e.cooldown = 0.6;
-      if (e.stun >= CONFIG.enemyStunThreshold - 1 && e.state !== E.DEAD) {
-        e.stun = CONFIG.enemyStunThreshold;
+      if (e.stun >= stunMax(e) - 1 && e.state !== E.DEAD) {
+        e.stun = stunMax(e);
         e.consecutiveHits = 0;
         e.activeHitDone = false;
         enterStun(e);                      // STUN! を出したあとに上書きする
@@ -3973,7 +4139,7 @@ function updateThrownEnemy(en, rdt) {
     const dmg = Math.min(CONFIG.tentThrowDamageMax, speed * CONFIG.tentThrowDamage);
     en.throwVel = null;
     // 着地したら必ずスタン。投げの見返りを「そのあと殴れる」側に寄せる
-    en.stun = CONFIG.enemyStunThreshold;
+    en.stun = stunMax(en);
     applyDamage(en, dmg);
     if (en.state === E.THROWN) {     // まだ生きている
       en.consecutiveHits = 0;
@@ -4269,6 +4435,7 @@ function tentSweepHit(en, atk) {
     bossFound(true);
     return;
   }
+  if (bossFinisherHit(en)) return;
 
   // --- 触手のフィニッシャーへの分岐 ---
   // 条件は拳の掴み（resolvePunch）とまったく同じ。スタンの見返りなので、
@@ -4696,6 +4863,7 @@ function asuraHit(en, xa, dmg, stun, cost) {
   }
   if (en.state === E.DEAD || en.state === E.FLEE || en.state === E.GRABBED ||
       en.state === E.DODGE) return;
+  if (bossFinisherHit(en)) return;
   const mul = CONFIG.asuraDamageMul;
   const attacking = (en.state === E.WINDUP || en.state === E.ACTIVE);
   applyDamage(en, dmg * mul);
@@ -4913,7 +5081,24 @@ function projectToScreen(worldPos) {
 function targetRadius() {
   return CONFIG.targetRadiusPx * window.innerHeight / 720;
 }
-function hideTargets() { for (const t of targetEntries) t.el.classList.add('hidden'); }
+function hideTargets() {
+  for (const t of targetEntries) t.el.classList.add('hidden');
+  bossEatTargetEl.classList.add('hidden');
+}
+
+// 食べられている腕の□（1つだけ。ダクトの男専用）
+const bossEatTargetEl = document.createElement('div');
+bossEatTargetEl.className = 'shoulder-target eat hidden';
+document.body.appendChild(bossEatTargetEl);
+
+// ライジングで斬れる部位か。
+// 通常の敵はスタン中の腕と首。ダクトの男は、通常スタンでは腕だけ・
+// HP0 のフィニッシャースタンでは腕と首（首を斬るとラウンドが終わる）
+function partTargetable(en, key) {
+  if (!en.boss) return en.state === E.STUNNED;
+  if (en.state === E.BOSS_DOWN) return true;
+  return en.state === E.STUNNED && key !== 'HEAD';
+}
 
 function updateTargets() {
   const active = (state === S.RISE_IN || state === S.RISING);
@@ -4936,7 +5121,7 @@ function updateTargets() {
   for (const t of targetEntries) {
     const en = t.enemy;
     const attached = t.pivot.parent === en.pivotRoot;
-    if (en.state !== E.STUNNED || !attached ||
+    if (!partTargetable(en, t.key) || !attached ||
         playerPos.distanceTo(en.group.position) > CONFIG.risingInteractRange) {
       t.el.classList.add('hidden'); continue;
     }
@@ -4950,6 +5135,26 @@ function updateTargets() {
     if (d < targetRadius() && d < bestDist) {
       best = { kind: 'part', entry: t, el: t.el, world: wp.clone() };
       bestDist = d;
+    }
+  }
+
+  // --- ダクトの男が食べている腕（スタンしていなくても取り返せる）---
+  const eatOk = bossMan && bossMan.state === E.BOSS_EAT && bossMan.eat && bossMan.eat.started &&
+    playerPos.distanceTo(bossMan.group.position) <= CONFIG.risingInteractRange;
+  if (!eatOk) bossEatTargetEl.classList.add('hidden');
+  else {
+    bossMan.eat.mesh.getWorldPosition(wp);
+    const scr = projectToScreen(wp);
+    if (!scr.front) bossEatTargetEl.classList.add('hidden');
+    else {
+      bossEatTargetEl.classList.remove('hidden');
+      bossEatTargetEl.style.left = scr.x + 'px';
+      bossEatTargetEl.style.top = scr.y + 'px';
+      const d = Math.hypot(scr.x - cx, scr.y - cy);
+      if (d < targetRadius() && d < bestDist) {
+        best = { kind: 'bossEat', enemy: bossMan, el: bossEatTargetEl, world: wp.clone() };
+        bestDist = d;
+      }
     }
   }
 
@@ -5029,6 +5234,7 @@ function updateTargets() {
     if (p.el) p.el.classList.toggle('selected', best !== null && p.el === best.el);
   }
   for (const t of targetEntries) t.el.classList.toggle('selected', best !== null && t.el === best.el);
+  bossEatTargetEl.classList.toggle('selected', best !== null && bossEatTargetEl === best.el);
   for (const c of corpses) {
     c.el.classList.toggle('selected', best !== null && c.el === best.el);
     for (const key of ['LEFT', 'RIGHT']) {
@@ -5062,7 +5268,8 @@ const _uiPos = new THREE.Vector3();
 function updateEnemyUi() {
   for (const en of enemies) {
     // 死体のフリをしている間はバーも出さない。出したら隠れる意味がない
-    if (en.state === E.DEAD || en.state === E.HIDDEN || en.state === E.FLEE) {
+    if (en.state === E.DEAD || en.state === E.HIDDEN || en.state === E.FLEE ||
+        en.state === E.BOSS_KICKED || !en.group.visible) {
       en.ui.root.classList.add('hidden');
       continue;
     }
@@ -5076,13 +5283,16 @@ function updateEnemyUi() {
       en.ui.root.style.left = scr.x + 'px';
       en.ui.root.style.top = scr.y + 'px';
       en.ui.hp.style.width = (en.hp / en.maxHp * 100) + '%';
-      en.ui.stun.style.width = (en.stun / CONFIG.enemyStunThreshold * 100) + '%';
+      en.ui.stun.style.width = (en.stun / stunMax(en) * 100) + '%';
       // 状態は文字ではなく色の印で出す。予備動作＝橙、ジャストの瞬間＝白く光る、
       // 攻撃中＝赤、スタン＝黄。それ以外は印を消す
-      const just = (en.state === E.WINDUP && isJustTiming(en));
+      // ダクトの男の腕狩り・射撃・キックも予備動作として橙、HP0 はスタンと同じ黄
+      const just = isJustTiming(en);
+      const windup = (en.state === E.WINDUP || en.state === E.BOSS_RISE ||
+                      en.state === E.BOSS_SHOOT || en.state === E.BOSS_KICK);
       en.ui.state.className = 'state' +
-        (just ? ' just' : en.state === E.WINDUP ? ' windup' : en.state === E.ACTIVE ? ' active' :
-         en.state === E.STUNNED ? ' stunned' : '');
+        (just ? ' just' : windup ? ' windup' : en.state === E.ACTIVE ? ' active' :
+         (en.state === E.STUNNED || en.state === E.BOSS_DOWN) ? ' stunned' : '');
     } else en.ui.root.classList.add('hidden');
   }
 }
@@ -5098,8 +5308,13 @@ function updateEnemyUi() {
    ラウンド構成:
      R1  部屋Aで正面から戦う。通常の敵の動きに加えて
            ・プレイヤーのパンチをキックで潰してくる（BOSS_KICK）
-           ・ライジングで腕を刈りに来る（BOSS_RISE）
-         倒すと首が伸びて頭モードになり、ダクトへ逃げる。体は死体として残る。
+           ・ライジングで腕を刈りに来る（BOSS_RISE）。スローにはならない。
+             ドッジ（白く光った瞬間ならジャスト）／キック／間合いの外で防げる
+           ・奪った腕は「装着」するか「食べる」（下記）
+         HP0 でフィニッシャースタン（BOSS_DOWN）。勝手には逃げない。
+           ・ライジングで首を斬る → 頭がダクトへ逃げ、体は死体として残る
+           ・殴る／蹴る（何でも）→ 踏み込んで蹴り飛ばす → 飛ぶ体から頭が抜けて逃げる
+         通常スタンでは腕しか斬れない（首の□は出ない）。
      追う プレイヤーもライジング→頭モードでダクトを抜ける
      R2  暗い部屋。大量の死体のどこかに頭を挿して隠れている。
          10秒以内に見つけて殴れば先制ダメージ入りで開幕。
@@ -5109,6 +5324,16 @@ function updateEnemyUi() {
 
    隠れている男を見分ける手掛かりは「頭が付いていること」。
    この世界の死体は全部首なしなので、暗がりの中で頭のある1体を探すことになる。
+
+   奪った腕の使い道:
+     装着  同じ側の腕として付ける。種類で攻撃が変わる
+             拳=通常 / 銃=離れると撃ってくる（BOSS_SHOOT）/ 触手=間合いが伸びて引き寄せる
+           付けた腕は耐久を保ったまま。通常スタン中に斬れば同じ耐久で取り返せる
+     捕食  口元へ運んで食べる（BOSS_EAT・bossEatTime 秒）。食べた割合だけHPが回復する。
+           その間は動かず攻撃もしない。食べている腕にだけ□が出て、ライジングで取り返せる
+           （スタン不要）。取り返した腕は食べられた割合だけ耐久が減る（最大 bossEatLoss）。
+           食べ切られたら腕は消える。スタンさせると腕を床に落とす
+     食べている間は既存の字幕（say）で食レポをする。新しいUIは作らない
    ========================================================= */
 
 /* ---------- アリーナの寸法 ---------- */
@@ -5287,9 +5512,11 @@ const BOSS = {
   scareT: 0,
   camLock: false,
   preempt: false,
+  flee: null,      // ダクトへ逃げる頭 { from, mid, to, t }
 };
 let bossMan = null;
 let stolenArms = [];     // 奪われて飛んでいく腕の演出
+let bossBullets = [];    // 銃腕を付けた男の弾
 
 // 同じ seed なら同じ配置になる簡易乱数（ラウンドごとにレイアウトを変える）
 function bossRng(seed) {
@@ -5322,6 +5549,7 @@ function createBossMan() {
   en.room = null;                 // 部屋判定はボス側の phase で持つ
   en.home = new THREE.Vector3();
   en.kickCd = 0; en.riseCd = 0; en.bonusDamage = 0; en.stolen = 0;
+  en.gunCd = 0; en.eat = null; en.eatCd = 0; en.eatHealed = 0;
   en.armMesh = { LEFT: en.parts.LEFT.children[0], RIGHT: en.parts.RIGHT.children[0] };
   en.armBaseColor = COLOR_ENEMY_ARM;
 
@@ -5370,7 +5598,7 @@ function createBossMan() {
 // 伸びる首と刃の見た目。riseK は BOSS_RISE / FLEE の進行に合わせて動く
 function updateBossRig(en, dt) {
   const rig = en.rig;
-  const rising = (en.state === E.BOSS_RISE || en.state === E.FLEE);
+  const rising = (en.state === E.BOSS_RISE);
   if (!rising) rig.riseK += (0 - rig.riseK) * Math.min(1, dt * 9);
   const k = rig.riseK;
   const lift = 0.95 * k;
@@ -5449,36 +5677,53 @@ function resetBoss() {
   BOSS.timer = 0; BOSS.burst = []; BOSS.burstT = 0; BOSS.scareT = 0;
   BOSS.camLock = false; BOSS.preempt = false;
   BOSS.scarePosed = false; BOSS.scareHit = false;
+  BOSS.flee = null;
+  fleeHead.visible = false;          // 逃げる途中でリセットされても頭が宙に残らない
   clearArenaProps();
   BOSS.spawned = []; BOSS.hideBody = null;
   for (const a of stolenArms) scene.remove(a.obj);
   stolenArms = [];
+  clearBossBullets();
+  bossLineAt = {};
+  foodReviewed = {};
   bossUi.hud.classList.add('hidden');
   bossUi.count.classList.add('hidden');
   hideSubtitle();
   bossUi.scare.style.opacity = '0';
   if (bossMan) {
     const en = bossMan;
+    bossClearEat(en);                  // 食べかけの腕は消す（床にも落とさない）
     en.hp = en.maxHp; en.stun = 0; en.shoveLeft = 0; en.consecutiveHits = 0;
-    en.kickCd = 0; en.riseCd = 0; en.bonusDamage = 0; en.stolen = 0;
-    en.headless = false; en.grabK = 0; en.activeHitDone = false;
-    en.rig.riseK = 0;
+    en.kickCd = 0; en.riseCd = 0; en.gunCd = 0; en.eatCd = 0; en.eatHealed = 0;
+    en.activeHitDone = false; en.grabK = 0; en.riseDone = false; en.shotDone = false;
+    en.tetherVel.set(0, 0, 0); en.throwVel = null; en.kickVel = null;
     en.group.visible = false;
     en.group.position.set(0, 0, ARENA.z0 - 20);   // 画面外へ退避
-    en.pivotRoot.rotation.set(0, 0, 0);
-    en.pivotRoot.position.set(0, 0, 0);
-    for (const key of ['LEFT', 'RIGHT']) {
-      const part = en.parts[key];
-      if (part.parent !== en.pivotRoot) { if (part.parent) part.parent.remove(part); en.pivotRoot.add(part); }
-      part.position.set(key === 'RIGHT' ? -0.68 : 0.68, 1.82, 0);
-      part.rotation.set(0, 0, 0); part.quaternion.set(0, 0, 0, 1); part.visible = true;
-      en.armMesh[key].material.color.setHex(en.armBaseColor);
-    }
-    en.parts.HEAD.visible = true;
-    en.parts.HEAD.position.set(0, 2.12, 0);
+    bossRestoreBody(en);
     setEnemyState(en, E.IDLE);
     updateBossRig(en, 1);
   }
+}
+
+// 新しい体に戻す（ラウンド開始・リセット）。斬られた腕・付け替えた腕・飛んだ頭を全部元に戻す。
+// 腕は毎回新しいピボットで作り直す＝斬られてプレイヤーへ飛んでいったメッシュを再利用しない
+// （再利用すると、吸着の途中で同じメッシュが男の肩にも戻って腕が2本に見える）
+function bossRestoreBody(en) {
+  bossSetArm(en, 'LEFT', null);
+  bossSetArm(en, 'RIGHT', null);
+  const head = en.parts.HEAD;
+  if (head.parent !== en.pivotRoot) {
+    if (head.parent) head.parent.remove(head);
+    en.pivotRoot.add(head);
+  }
+  head.position.set(0, 2.12, 0);
+  head.rotation.set(0, 0, 0);
+  head.visible = true;
+  en.headless = false;
+  en.pivotRoot.rotation.set(0, 0, 0);
+  en.pivotRoot.position.set(0, 0, 0);
+  en.rig.riseK = 0;
+  en.stolen = 0; en.bonusDamage = 0;
 }
 
 // 部屋Aに入った or [B] で開始
@@ -5498,13 +5743,18 @@ function beginRound(idx, preempt, burst) {
   BOSS.room = idx;
   BOSS.phase = 'FIGHT';
   BOSS.timer = 0;
+  BOSS.flee = null;
   bossUi.count.classList.add('hidden');
+  // ラウンドごとに新しい体で出てくる（前の体は死体として前の部屋に残っている）
+  bossClearEat(en);
+  bossRestoreBody(en);
   en.group.visible = true;
   en.group.position.set((r.x0 + r.x1) / 2, 0, (ARENA.z0 + ARENA.z1) / 2);
   en.hp = en.maxHp * (preempt ? (1 - CONFIG.bossPreemptiveDamage) : 1);
   en.stun = 0; en.shoveLeft = 0; en.consecutiveHits = 0; en.activeHitDone = false;
-  en.cooldown = 1.2; en.kickCd = 1.5; en.riseCd = 4.0;
-  en.rig.riseK = 0;
+  en.cooldown = 1.2; en.kickCd = 1.5; en.riseCd = 4.0; en.gunCd = 2.0;
+  en.eatCd = 0; en.eatHealed = 0;
+  en.riseDone = false; en.shotDone = false; en.kickVel = null;
   setEnemyState(en, E.IDLE);
   bossUi.hud.classList.remove('hidden');
 
@@ -5537,71 +5787,99 @@ function burstCorpseSpectacle(c) {
 
 /* ---------- 倒された ---------- */
 function bossDefeated(en) {
+  // HP0 で勝手に逃げない。フィニッシャースタンに入り、プレイヤーがとどめを刺すまで待つ
+  enterBossDown(en);
+}
+
+// HP0 のフィニッシャースタン。通常スタン（STUNNED）とは別の状態で、
+// 首と腕に□が出る。殴る・蹴るなど何で触れても蹴りのフィニッシャーになる
+function enterBossDown(en) {
+  if (en.state === E.BOSS_DOWN || en.state === E.BOSS_KICKED || en.state === E.FLEE) return;
+  // 触手で拘束中ならほどく（位置を触手が持ったままだと膝をつけない）
+  if (tentHold && tentHold.enemy === en) detachTentacle();
   en.hp = 0;
   en.stun = 0;
+  en.shoveLeft = 0;
+  en.throwVel = null;
+  en.group.position.y = 0;
+  en.riseDone = true; en.shotDone = true;
+  if (en.eat) bossDropEatArm(en);
+  setEnemyState(en, E.BOSS_DOWN);
+  addHitstop(0.22); addShake(0.55); doFlash(0.45, '#ffd0c0');
+  bossLine('down', pickBossLine('down'), 2.2, 0);
+}
+
+// 頭がダクトへ逃げる。from は頭が体から離れた位置。
+// 体はここで（首切り）または飛び終わったところで（蹴り）死体になる
+function bossLaunchHead(en, from) {
+  const di = Math.min(ARENA.ducts.length - 1, BOSS.room);
+  const d = ARENA.ducts[di];
+  const goRight = (d.a === BOSS.room);
+  BOSS.next = goRight ? d.b : d.a;
+  BOSS.flee = {
+    from: from.clone(),
+    mid: new THREE.Vector3(goRight ? d.x0 : d.x1, 1.05, d.z),
+    to: new THREE.Vector3(goRight ? d.x1 : d.x0, 1.05, d.z),
+    t: 0,
+  };
+  fleeHead.position.copy(from);
+  fleeHead.visible = true;
+  en.parts.HEAD.visible = false;
+  en.headless = true;
   if (BOSS.round >= 3) {
-    // 3ラウンド目。完全に逃走してボス戦終了
+    // 3ラウンド目。完全に逃げてボス戦終了（死なない。また出てくる）
     BOSS.phase = 'CLEAR';
-    setEnemyState(en, E.FLEE);
-    en.fleeT = 0; en.fleeStage = 'rise';
     say('ダクトの男：……次は殺す', 4.0);
-    showFeedback('BOSS CLEAR', '#ffd75e', 46);
     doFlash(0.5, '#ffe9a0'); addShake(0.7);
   } else {
     BOSS.phase = 'FLEE';
-    setEnemyState(en, E.FLEE);
-    en.fleeT = 0; en.fleeStage = 'rise';
-    showFeedback('DOWN', '#ff8f7a', 36);
-    addHitstop(0.2); addShake(0.5); doFlash(0.4, '#ffd0c0');
+    say('ダクトの男：ついてこい', 2.6);
   }
 }
 
-// 首が伸びて頭だけになり、ダクトへ飛び込む
-function updateBossFlee(en, wdt) {
-  en.fleeT += wdt;
-  if (en.fleeStage === 'rise') {
-    en.rig.riseK = Math.min(1, en.fleeT / CONFIG.bossFleeRise);
-    if (en.fleeT >= CONFIG.bossFleeRise) {
-      // 体は死体として残る（プレイヤーが乗っ取れる。ここが唯一まともな補給）
-      const c = createCorpse(en.group.position.x, en.group.position.z, en.group.rotation.y,
-        { enemyStyle: true, arms: armsFromEnemy(en), fuse: null });
-      BOSS.spawned.push(c);
-      const at = new THREE.Vector3();
-      en.parts.HEAD.getWorldPosition(at);
-      en.group.visible = false;
-      fleeHead.visible = true;
-      fleeHead.position.copy(at);
-      en.fleeStage = 'travel';
-      en.fleeT = 0;
-      en.fleeFrom = at.clone();
-      // 逃げ込むダクト。CLEAR のときは隣室が無いこともあるので index を丸める
-      const di = Math.min(ARENA.ducts.length - 1, BOSS.room);
-      const d = ARENA.ducts[di];
-      const goRight = (d.a === BOSS.room);
-      en.fleeMid = new THREE.Vector3(goRight ? d.x0 : d.x1, 1.05, d.z);
-      en.fleeTo = new THREE.Vector3(goRight ? d.x1 : d.x0, 1.05, d.z);
-      BOSS.next = goRight ? d.b : d.a;
-      addShake(0.4);
-      doFlash(0.25, '#9ce8ff');
-      say('ダクトの男：ついてこい', 2.6);
-    }
-  } else if (en.fleeStage === 'travel') {
-    const k = Math.min(1, en.fleeT / CONFIG.bossFleeTravel);
-    const e = k * k * (3 - 2 * k);
-    if (e < 0.6) fleeHead.position.lerpVectors(en.fleeFrom, en.fleeMid, e / 0.6);
-    else fleeHead.position.lerpVectors(en.fleeMid, en.fleeTo, (e - 0.6) / 0.4);
-    fleeHead.rotation.y += wdt * 6;
-    if (k >= 1) {
-      fleeHead.visible = false;
-      en.fleeStage = 'gone';
-      if (BOSS.phase === 'CLEAR') {
-        bossUi.hud.classList.add('hidden');
-      } else {
-        BOSS.phase = 'WAIT';
-      }
-    }
+// 体を死体にして本体を隠す。奪って付けていた腕は耐久ごと死体に残る（取り返せる）
+function bossLeaveBody(en) {
+  const c = createCorpse(en.group.position.x, en.group.position.z, en.group.rotation.y,
+    { enemyStyle: true, arms: armsFromEnemy(en), fuse: null });
+  BOSS.spawned.push(c);
+  en.group.visible = false;
+  en.kickVel = null;
+  en.pivotRoot.rotation.set(0, 0, 0);
+  en.pivotRoot.position.set(0, 0, 0);
+  setEnemyState(en, E.FLEE);
+}
+
+// ライジングで首を斬った（BOSS_DOWN のときだけ□が出る）
+function bossHeadCut(en) {
+  const at = new THREE.Vector3();
+  en.parts.HEAD.getWorldPosition(at);
+  spawnFleshBurst(at, 10, 4.2);
+  selectedTarget = null;
+  bossLaunchHead(en, at);
+  bossLeaveBody(en);
+  addHitstop(CONFIG.headCutHitstop);
+  addShake(CONFIG.headCutShake);
+  doFlash(0.85, '#ffd8c8');
+}
+
+// 逃げる頭の移動（ワールド時間）。ダクトに入ったら次の部屋で待つ
+function updateBossFleeHead(wdt) {
+  const f = BOSS.flee;
+  if (!f) return;
+  f.t += wdt;
+  const k = Math.min(1, f.t / CONFIG.bossFleeTravel);
+  const e = k * k * (3 - 2 * k);
+  if (e < 0.6) fleeHead.position.lerpVectors(f.from, f.mid, e / 0.6);
+  else fleeHead.position.lerpVectors(f.mid, f.to, (e - 0.6) / 0.4);
+  fleeHead.rotation.y += wdt * 6;
+  if (k >= 1) {
+    fleeHead.visible = false;
+    BOSS.flee = null;
+    if (BOSS.phase === 'CLEAR') bossUi.hud.classList.add('hidden');
+    else if (BOSS.phase === 'FLEE') BOSS.phase = 'WAIT';
   }
 }
+
 
 // 逃げる頭（本体とは別オブジェクト）
 const fleeHead = new THREE.Group();
@@ -5792,6 +6070,8 @@ function updateJumpscare(dt) {
 function updateBossState(en, wdt) {
   if (en.kickCd > 0) en.kickCd -= wdt;
   if (en.riseCd > 0) en.riseCd -= wdt;
+  if (en.gunCd > 0) en.gunCd -= wdt;
+  if (en.eatCd > 0) en.eatCd -= wdt;
 
   // ボス戦が始まっていない（リセット直後・ハブ・デモ中）あいだは何もしない。
   // ダクトの男は enemies に入ったまま、見えない状態でアリーナの奥に退避している。
@@ -5799,7 +6079,19 @@ function updateBossState(en, wdt) {
   // どこまでも追ってきて、見えないまま殴ってくる（リセットから約40秒後に届く）
   if (BOSS.phase === 'IDLE') return true;
   if (en.state === E.HIDDEN) return true;              // 死体のフリ。何もしない
-  if (en.state === E.FLEE) { updateBossFlee(en, wdt); return true; }
+  if (en.state === E.FLEE) return true;                // 体はもう死体。頭は updateBossFleeHead
+  if (en.state === E.BOSS_DOWN) return true;           // とどめを待つ。動かない
+  if (en.state === E.BOSS_KICKED) { updateBossKicked(en, wdt); return true; }
+
+  // 持っている腕（食べる予定・食べかけ）の後始末。
+  // 食べ始める前／食べている途中に崩された（スタン・拘束・投げ）なら床に落とす
+  if (en.eat) {
+    const holdOk = en.eat.started ? (en.state === E.BOSS_EAT)
+      : (en.state !== E.STUNNED && en.state !== E.TETHER && en.state !== E.THROWN);
+    if (!holdOk) bossDropEatArm(en);
+  }
+
+  if (en.state === E.BOSS_EAT) { updateBossEat(en, wdt); return true; }
 
   if (en.state === E.BOSS_KICK) {
     if (en.t >= CONFIG.bossKickStartup && !en.kickDone) {
@@ -5825,16 +6117,38 @@ function updateBossState(en, wdt) {
     return true;
   }
 
+  if (en.state === E.BOSS_SHOOT) {
+    if (en.t >= CONFIG.bossGunWindup && !en.shotDone) { en.shotDone = true; bossFireBullet(en); }
+    if (en.t >= CONFIG.bossGunWindup + CONFIG.bossGunRecover) {
+      en.shotDone = false; en.gunCd = CONFIG.bossGunCooldown;
+      en.cooldown = 0.6;
+      bossEndMove(en);
+    }
+    return true;
+  }
+
   // --- ここから新しくボス行動へ入るか ---
   if (BOSS.phase !== 'FIGHT') return false;
   if (en.state !== E.IDLE && en.state !== E.MOVE) return false;
+
+  // 奪った腕を食べる（手元に届いていれば）
+  if (en.eat && !en.eat.started) { bossStartEat(en); return true; }
+
   const dist = playerPos.distanceTo(en.group.position);
-  if (en.riseCd <= 0 && dist <= CONFIG.bossRiseRange && state === S.HUMAN && player.hp > 0) {
+  // ライジングで腕を刈りに来る。腕を持っている（食べる予定がある）間は来ない
+  if (en.riseCd <= 0 && !en.eat && dist <= CONFIG.bossRiseRange &&
+      state === S.HUMAN && player.hp > 0) {
     en.riseDone = false;
     setEnemyState(en, E.BOSS_RISE);
-    showFeedback('腕を狙っている！', '#ff9c6a', 34);
-    say('ダクトの男：その腕をよこせ', 1.6);
+    bossLine('rise', 'ダクトの男：その腕をよこせ', 1.6, 6);
     addShake(0.18);
+    return true;
+  }
+  // 銃腕を付けていれば、離れたところから撃つ
+  if (en.gunCd <= 0 && bossArmCount(en, ARM.GUN) > 0 && state === S.HUMAN && player.hp > 0 &&
+      dist >= CONFIG.bossGunMinRange && dist <= CONFIG.bossGunRange) {
+    en.shotDone = false;
+    setEnemyState(en, E.BOSS_SHOOT);
     return true;
   }
   return false;
@@ -5843,7 +6157,7 @@ function updateBossState(en, wdt) {
 // アーマー中に溜め切ったスタンは、技を出し切ったところで効く。
 // 「止められないが、殴った分はちゃんと残る」ようにするため
 function bossEndMove(en) {
-  if (en.stun >= CONFIG.enemyStunThreshold) enterStun(en);
+  if (en.stun >= stunMax(en)) enterStun(en);
   else setEnemyState(en, E.IDLE);
 }
 
@@ -5882,16 +6196,15 @@ function bossKickHit(en) {
 function bossArmCut(en) {
   const dist = playerPos.distanceTo(en.group.position);
   addShake(0.4);
-  if (dist > CONFIG.bossRiseRange) { showFeedback('MISSED', '#7fc4a0', 30); return; }
-  if (player.invuln > 0) { showFeedback('JUST DODGE!', '#9ce8ff', 36); doFlash(0.2, '#9ce8ff'); return; }
-  if (state !== S.HUMAN) { showFeedback('MISSED', '#7fc4a0', 30); return; }
+  if (dist > CONFIG.bossRiseRange) return;                     // 間合いの外へ逃げた
+  if (player.invuln > 0) { doFlash(0.2, '#9ce8ff'); return; }   // ドッジで避けた
+  if (state !== S.HUMAN) return;
 
   const sides = ['LEFT', 'RIGHT'].filter((s) => !player.arms[s].lost);
   if (!sides.length) {
     // 腕が無いなら普通の一撃として入る
     damagePlayer(CONFIG.enemyDamageToPlayer);
     doFlash(0.4, '#ff3b30'); addShake(0.4);
-    showFeedback('SLASHED', '#ff6b5e', 32);
     return;
   }
   const side = sides[Math.floor(Math.random() * sides.length)];
@@ -5899,49 +6212,449 @@ function bossArmCut(en) {
   const from = new THREE.Vector3();
   fpHands[side].userData.fist.getWorldPosition(from);
 
-  // 奪った腕は同じ側に付ける（右手を取られたら男の右手になる）
-  const bossSide = side;
+  // 奪われる直前の状態（種類・耐久・パージ済みか）をそのまま持っていく。
+  // 取り返したときに耐久が戻ったり、銃が拳に化けたりしないように
+  const armState = cloneArmState(st);
+  armState.lost = false;
+  const mode = bossChooseUse(en, side, armState);
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.7, 0.18),
-    new THREE.MeshLambertMaterial({ color: st.kind === ARM.GUN ? COLOR_GUN_ARM : COLOR_PLAYER_ARM }));
+    new THREE.MeshLambertMaterial({ color: armColor(armState) }));
   mesh.position.copy(from);
+  mesh.userData.kind = armState.kind;
   scene.add(mesh);
-  stolenArms.push({ obj: mesh, from: from.clone(), en, key: bossSide, t: 0 });
+  // 奪った腕は同じ側に付ける（右手を取られたら男の右手になる）
+  stolenArms.push({ obj: mesh, from: from.clone(), en, key: side, t: 0, mode, armState });
 
   st.lost = true; st.hp = 0; st.purged = false;
   gunHold[side] = false;
   if (player.attack && player.attack.side === side) player.attack = null;
+  if (tentHold && tentHold.side === side) detachTentacle();
   updateArmVisuals();
-  en.stolen++;
-  en.bonusDamage = en.stolen * CONFIG.bossStolenArmDamage;
   addHitstop(0.24); addShake(0.8);
   doFlash(0.55, '#ff5a48');
-  showFeedback(side[0] + ' ARM TAKEN', '#ff6b5e', 42);
-  say('ダクトの男：もらっておく', 2.2);
+  say('ダクトの男：もらっておく', 1.6);
+}
+
+/* ---------- 奪った腕：装着 or 捕食 ---------- */
+// どちらに使うか。弱っていれば食べる。良い腕（銃・触手）なら付け替える
+function bossChooseUse(en, key, armState) {
+  const missing = en.parts[key].parent !== en.pivotRoot;
+  const curKind = missing ? null : en.parts[key].userData.kind;
+  const canEat = en.eatCd <= 0 && en.eatHealed < CONFIG.bossEatHealCapRound * en.maxHp - 1;
+  const hurt = en.hp < en.maxHp * CONFIG.bossEatPreferHp;
+  if (canEat && hurt) return 'eat';
+  if (missing) return 'equip';
+  if (armState.kind !== ARM.FIST && curKind === ARM.FIST) return 'equip';
+  return canEat ? 'eat' : 'equip';
+}
+
+// 男の腕を付け替える。armState=null なら男の元の腕（拳）
+function bossSetArm(en, key, armState) {
+  const old = en.parts[key];
+  if (old && old.parent === en.pivotRoot) en.pivotRoot.remove(old);
+  const kind = armState ? armState.kind : ARM.FIST;
+  const pivot = new THREE.Group();
+  pivot.position.set(key === 'RIGHT' ? -0.68 : 0.68, 1.82, 0);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.95, 0.2),
+    new THREE.MeshLambertMaterial({ color: armState ? armColor(armState) : en.armBaseColor }));
+  mesh.position.y = -0.48;
+  pivot.add(mesh);
+  if (kind === ARM.GUN) {
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.42, 8),
+      new THREE.MeshLambertMaterial({ color: COLOR_GUN_BARREL }));
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, -0.92, 0.18);
+    pivot.add(barrel);
+  } else if (kind === ARM.TENTACLE) {
+    // 先から垂れる細い触手。腕の種類が遠目にも分かるように
+    for (let i = 0; i < 3; i++) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.05),
+        new THREE.MeshLambertMaterial({ color: COLOR_TENTACLE_TIP }));
+      t.position.set((i - 1) * 0.07, -1.12, 0.04 * i);
+      t.rotation.x = 0.2 * (i - 1);
+      pivot.add(t);
+    }
+  }
+  pivot.userData.kind = kind;
+  pivot.userData.armState = armState ? cloneArmState(armState) : null;
+  en.pivotRoot.add(pivot);
+  en.parts[key] = pivot;
+  en.armMesh[key] = mesh;
+  for (const t of targetEntries) if (t.enemy === en && t.key === key) t.pivot = pivot;
+  // 奪って付けた腕の数だけ一撃が重くなる
+  let stolen = 0;
+  for (const k of ['LEFT', 'RIGHT']) {
+    const p = en.parts[k];
+    if (p.parent === en.pivotRoot && p.userData.armState) stolen++;
+  }
+  en.stolen = stolen;
+  en.bonusDamage = stolen * CONFIG.bossStolenArmDamage;
+}
+
+// 付いている腕のうち、kind の腕が何本あるか
+function bossArmCount(en, kind) {
+  let n = 0;
+  for (const k of ['LEFT', 'RIGHT']) {
+    const p = en.parts[k];
+    if (p.parent === en.pivotRoot && p.userData.kind === kind) n++;
+  }
+  return n;
+}
+
+// 食べられた割合ぶんだけ耐久を減らした状態。元の耐久からの引き算なので、
+// 減っていた腕が取り返しで全快することはない
+function eatenArmState(e) {
+  const st = cloneArmState(e.armState);
+  st.hp = Math.max(1, Math.round(st.hp - CONFIG.armMaxHp * CONFIG.bossEatLoss * e.p));
+  st.lost = false;
+  return st;
+}
+
+// 口元に持った腕を作る（飛んできた腕が届いたとき）
+function bossHoldEatArm(en, armState) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.8, 0.22),
+    new THREE.MeshLambertMaterial({ color: armColor(armState), emissive: 0x2a1410 }));
+  mesh.userData.kind = armState.kind;
+  mesh.position.set(0, 1.98, 0.52);
+  mesh.rotation.z = Math.PI / 2;           // 口の前に横向きに持つ
+  // 齧ったところの赤い断面
+  const bite = new THREE.Mesh(new THREE.BoxGeometry(0.235, 0.06, 0.235),
+    new THREE.MeshBasicMaterial({ color: COLOR_FLESH }));
+  bite.position.y = 0.4;
+  mesh.add(bite);
+  en.pivotRoot.add(mesh);
+  en.eat = { mesh, armState, p: 0, healed: 0, started: false };
+}
+
+function bossStartEat(en) {
+  const e = en.eat;
+  e.started = true;
+  setEnemyState(en, E.BOSS_EAT);
+  bossFoodReview(en, e.armState);
+}
+
+function updateBossEat(en, wdt) {
+  const e = en.eat;
+  if (!e) { setEnemyState(en, E.IDLE); return; }
+  e.p = Math.min(1, e.p + wdt / CONFIG.bossEatTime);
+  // 食べた割合だけ回復する。1ラウンドの上限と最大HPは超えない
+  const capLeft = Math.max(0, CONFIG.bossEatHealCapRound * en.maxHp - en.eatHealed);
+  const want = Math.min(CONFIG.bossEatHeal * en.maxHp * e.p, e.healed + capLeft);
+  const add = Math.max(0, Math.min(want - e.healed, en.maxHp - en.hp));
+  if (add > 0) { en.hp += add; e.healed += add; en.eatHealed += add; }
+  // 食べられて短くなっていく
+  e.mesh.scale.set(1, Math.max(0.12, 1 - e.p * 0.88), 1);
+  e.mesh.position.x = Math.sin(worldTime * 11) * 0.03;
+  if (e.p >= 1) {
+    // 完食。腕は消える（もう取り返せない）
+    en.pivotRoot.remove(e.mesh);
+    en.eat = null;
+    en.eatCd = CONFIG.bossEatCooldown;
+    en.cooldown = 0.8;
+    setEnemyState(en, E.IDLE);
+    say('ダクトの男：ごちそうさま', 2.0);
+  }
+}
+
+// 食べている腕を取り返した（ライジングで□を斬った）
+function bossEatRetrieve(en, side) {
+  const e = en.eat;
+  if (!e || !e.started || en.state !== E.BOSS_EAT) return;
+  const wp = new THREE.Vector3();
+  e.mesh.getWorldPosition(wp);
+  en.pivotRoot.remove(e.mesh);
+  scene.add(e.mesh);
+  e.mesh.position.copy(wp);
+  e.mesh.rotation.set(0, 0, 0);
+  e.mesh.scale.set(1, 1, 1);
+  const st = eatenArmState(e);
+  en.eat = null;
+  en.eatCd = CONFIG.bossEatCooldown;
+  selectedTarget = null;
+  startArmGraft(e.mesh, side, wp, st);
+  // 食べた分の回復は残るが、それ以上は回復しない（ここで食事が終わる）
+  enterHitReact(en, 1.2, true);
+  en.cooldown = 0.35;                       // 怒ってすぐ殴りに来る
+  addHitstop(0.12); addShake(0.3); doFlash(0.25, '#ffd0b0');
+  say(pickBossLine('retrieve'), 2.2);
+}
+
+// 食べかけの腕を床に落とす（スタン・フィニッシャースタンで崩れたとき）。
+// 落ちた腕は床の腕と同じ□で拾える。耐久は食べられた分だけ減ったまま
+function bossDropEatArm(en) {
+  const e = en.eat;
+  if (!e) return;
+  const wp = new THREE.Vector3();
+  e.mesh.getWorldPosition(wp);
+  if (e.mesh.parent) e.mesh.parent.remove(e.mesh);
+  const st = eatenArmState(e);
+  en.eat = null;
+  en.eatCd = Math.max(en.eatCd, CONFIG.bossEatCooldown * 0.5);
+  const color = armColor(st);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.72, 0.13),
+    new THREE.MeshLambertMaterial({ color }));
+  m.position.copy(wp);
+  m.userData.kind = st.kind;
+  if (st.kind === ARM.GUN) {
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.30, 8),
+      new THREE.MeshLambertMaterial({ color: COLOR_GUN_BARREL }));
+    barrel.position.y = -0.48;
+    m.add(barrel);
+  }
+  scene.add(m);
+  const el = document.createElement('div');
+  el.className = 'shoulder-target hidden';
+  document.body.appendChild(el);
+  const a = Math.random() * Math.PI * 2;
+  severedParts.push({
+    obj: m, key: 'LEFT', el, phase: 'eject', armState: st,
+    vel: new THREE.Vector3(Math.cos(a) * 1.6, 3.2, Math.sin(a) * 1.6),
+    spin: new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10,
+                            (Math.random() - 0.5) * 10),
+    dropAt: 0, expireAt: null, baseColor: color, blinkPhase: 0,
+  });
+}
+
+// リセット・ラウンド切り替え用。床にも落とさず消す
+function bossClearEat(en) {
+  if (!en.eat) return;
+  if (en.eat.mesh.parent) en.eat.mesh.parent.remove(en.eat.mesh);
+  en.eat = null;
+}
+
+/* ---------- 字幕（ダクトの男のせりふ）----------
+   新しいUIは作らない。既存の say() / sayQueue() だけを使う。
+   同じ種類のせりふは cd 秒あけないと言わない（戦闘中に字幕が埋まらないように） */
+let bossLineAt = {};
+let bossLastPick = {};
+function bossLine(key, text, dur, cd, keepQueue) {
+  const last = bossLineAt[key];
+  if (cd > 0 && last !== undefined && worldTime - last < cd) return;
+  bossLineAt[key] = worldTime;
+  say(text, dur, keepQueue);
+}
+const BOSS_LINES = {
+  retrieve: ['ダクトの男：まだ食ってるだろうが！', 'ダクトの男：行儀の悪い奴だ！',
+             'ダクトの男：人の食事に手を出すな！'],
+  down: ['ダクトの男：……やるな', 'ダクトの男：ぐ……まだだ', 'ダクトの男：……効いたぞ'],
+};
+// 直前と同じせりふは選ばない
+function pickBossLine(kind) {
+  const list = BOSS_LINES[kind];
+  let i = Math.floor(Math.random() * list.length);
+  if (list.length > 1 && i === bossLastPick[kind]) i = (i + 1) % list.length;
+  bossLastPick[kind] = i;
+  return list[i];
+}
+
+// 食レポ。星はダクトの男の個人的な味の評価（戦闘性能とは無関係）
+const FOOD_REVIEW = {
+  fist: { name: '通常腕', stars: 3, a: '弾力ある筋肉が美味い。',
+          b: 'より使い込んだ腕は風味が増して良い。', used: 'よく使い込まれている。風味が違う。',
+          again: 'うむ。やはり美味い' },
+  purged: { name: '手首のない腕', stars: 2, a: '手首から先が無い。',
+            b: '食べやすいが、物足りん。', again: '……やはり物足りん' },
+  gun: { name: '銃腕', stars: 1, a: '火薬臭が強すぎる。',
+         b: '硬くて食用には向かない。', again: '……やはり硬い' },
+  tentacle: { name: '触手腕', stars: 4, a: '歯応えが素晴らしい。',
+              b: '口に入れてもまだ動いている。', again: 'うむ。まだ動いている' },
+};
+let foodReviewed = {};      // 種類ごとに一度全文を言ったか（2回目からは短く）
+function bossFoodReview(en, st) {
+  const kind = (st.kind === ARM.FIST && st.purged) ? 'purged' : st.kind;
+  const r = FOOD_REVIEW[kind] || FOOD_REVIEW.fist;
+  const stars = '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars);
+  if (foodReviewed[kind]) {
+    sayQueue([['ダクトの男：' + r.again, 2.0]]);
+    return;
+  }
+  foodReviewed[kind] = true;
+  // 使い込まれた（耐久の減った）拳は、2行目を変える
+  const second = (kind === 'fist' && st.hp <= CONFIG.armMaxHp * 0.5 && r.used) ? r.used : r.b;
+  sayQueue([
+    ['ダクトの男：' + r.name + '　' + stars, 1.6],
+    ['ダクトの男：' + r.a, 1.9],
+    ['ダクトの男：' + second, 2.3],
+  ]);
 }
 
 // 奪われた腕が男の肩へ飛んでいく
 function updateStolenArms(dt) {
+  const to = new THREE.Vector3();
   for (let i = stolenArms.length - 1; i >= 0; i--) {
     const a = stolenArms[i];
     a.t += dt;
     const k = Math.min(1, a.t / 0.45);
-    const to = new THREE.Vector3();
-    a.en.parts[a.key].getWorldPosition(to);
+    // 装着は肩へ、捕食は口元へ飛ぶ
+    if (a.mode === 'eat') a.en.pivotRoot.localToWorld(to.set(0, 1.98, 0.52));
+    else a.en.pivotRoot.localToWorld(to.set(a.key === 'RIGHT' ? -0.68 : 0.68, 1.82, 0));
     a.obj.position.lerpVectors(a.from, to, k * k * (3 - 2 * k));
     a.obj.rotation.x += dt * 14; a.obj.rotation.z += dt * 9;
     if (k >= 1) {
       scene.remove(a.obj);
-      // 奪った腕をそのまま使う。色が変わって「持っていかれた」ことが残る
-      a.en.armMesh[a.key].material.color.setHex(a.obj.material.color.getHex());
       stolenArms.splice(i, 1);
+      const en = a.en;
+      // 届くまでに男が倒れた／いなくなったら、腕は床に落ちる（取り返せる）
+      const gone = en.state === E.BOSS_DOWN || en.state === E.BOSS_KICKED ||
+                   en.state === E.FLEE || en.state === E.HIDDEN || !en.group.visible;
+      if (a.mode === 'eat' && !gone && !en.eat) {
+        bossHoldEatArm(en, a.armState);
+      } else if (!gone) {
+        // 付け替える腕が付いていたら、それは捨てる（肉片になって飛ぶ）
+        const old = en.parts[a.key];
+        if (old.parent === en.pivotRoot) {
+          const at = new THREE.Vector3();
+          old.getWorldPosition(at);
+          spawnFleshBurst(at, 5, 3.0, null, 0.6);
+        }
+        bossSetArm(en, a.key, a.armState);
+        addShake(0.2);
+      } else {
+        // 拾える腕として床に落とす
+        en.eat = { mesh: a.obj, armState: a.armState, p: 0, healed: 0, started: false };
+        scene.add(a.obj);
+        bossDropEatArm(en);
+      }
     }
   }
 }
 
+/* ---------- 銃腕で撃つ ---------- */
+const _bbFrom = new THREE.Vector3();
+function bossFireBullet(en) {
+  // 銃腕の側の手先から。両方銃なら交互に
+  const keys = ['LEFT', 'RIGHT'].filter((k) => en.parts[k].parent === en.pivotRoot &&
+                                               en.parts[k].userData.kind === ARM.GUN);
+  if (!keys.length) return;
+  en.gunSide = (en.gunSide === 0) ? 1 : 0;
+  const key = keys[Math.min(keys.length - 1, en.gunSide)];
+  en.pivotRoot.localToWorld(_bbFrom.set(key === 'RIGHT' ? -0.68 : 0.68, 1.55, 0.9));
+  const aim = new THREE.Vector3(playerPos.x, playerPos.y + EYE - 0.35, playerPos.z);
+  const dir = aim.sub(_bbFrom).normalize();
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xff8a5c }));
+  mesh.position.copy(_bbFrom);
+  scene.add(mesh);
+  bossBullets.push({ obj: mesh, vel: dir.multiplyScalar(CONFIG.bossBulletSpeed), travelled: 0 });
+  spawnFleshBurst(_bbFrom, 1, 1.0, null, 0.2);
+  addShake(0.12);
+}
+
+function updateBossBullets(wdt) {
+  for (let i = bossBullets.length - 1; i >= 0; i--) {
+    const b = bossBullets[i];
+    const from = b.obj.position.clone();
+    b.obj.position.addScaledVector(b.vel, wdt);
+    b.travelled += b.vel.length() * wdt;
+    let dead = b.travelled > CONFIG.bossGunRange + 4 || b.obj.position.y < 0.05;
+    // 通った線分とプレイヤーの縦線分（頭モードなら頭の高さ）の距離で当てる
+    const lo = (state === S.HEAD) ? headPos.y - 0.3 : playerPos.y + 0.6;
+    const hi = (state === S.HEAD) ? headPos.y + 0.3 : playerPos.y + EYE + 0.1;
+    const px = (state === S.HEAD) ? headPos.x : playerPos.x;
+    const pz = (state === S.HEAD) ? headPos.z : playerPos.z;
+    const hit = segSegDistSq(from.x, from.y, from.z, b.obj.position.x, b.obj.position.y, b.obj.position.z,
+                             px, lo, pz, px, hi, pz);
+    if (!dead && hit.d2 <= CONFIG.bossBulletRadius * CONFIG.bossBulletRadius) {
+      dead = true;
+      if (player.invuln <= 0 && player.hp > 0) {
+        if (damagePlayer(CONFIG.bossBulletDamage) !== 'guard') {
+          doFlash(0.35, '#ff5a3c'); addShake(0.3); addHitstop(0.05);
+        }
+      }
+    }
+    if (dead) { scene.remove(b.obj); bossBullets.splice(i, 1); }
+  }
+}
+
+function clearBossBullets() {
+  for (const b of bossBullets) scene.remove(b.obj);
+  bossBullets = [];
+}
+
+/* ---------- 蹴りのフィニッシャー（HP0 の男に何か当てたら入る）----------
+   腕の種類に関係なく、踏み込んで蹴り飛ばすだけ。プレイヤー側は type:'finisher'
+   （キャンセル不可・移動不可・無敵）として扱い、bossKick で区別する       */
+function bossFinisherHit(en) {
+  if (!en.boss || en.state !== E.BOSS_DOWN) return false;
+  if (inFinisher()) return true;
+  player.attack = { side: 'KICK', type: 'finisher', bossKick: true, t: 0, enemy: en, kicked: false };
+  player.invuln = Math.max(player.invuln, CONFIG.bossFinTotal + 0.2);
+  punchBuffer = null;
+  if (tentHold) detachTentacle();
+  addHitstop(0.04);
+  return true;
+}
+
+function updateBossKickFinisher(atk, dt) {
+  const en = atk.enemy;
+  // 男の前まで踏み込み、向きも合わせる
+  if (!atk.kicked && en.state === E.BOSS_DOWN) {
+    const to = en.group.position.clone().sub(playerPos); to.y = 0;
+    const d = to.length();
+    if (d > 0.001) {
+      const want = Math.atan2(-to.x, -to.z);
+      let dy = want - yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      yaw += dy * Math.min(1, dt * 16);
+      if (atk.t < CONFIG.bossFinDash && d > 1.5) {
+        playerPos.addScaledVector(to.divideScalar(d), Math.min(d - 1.5, (d - 1.5) * dt / Math.max(0.01, CONFIG.bossFinDash - atk.t) ));
+      }
+    }
+  }
+  if (!atk.kicked && atk.t >= CONFIG.bossFinImpact) {
+    atk.kicked = true;
+    if (en.state === E.BOSS_DOWN) {
+      const away = en.group.position.clone().sub(playerPos); away.y = 0;
+      if (away.lengthSq() < 0.001) away.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+      away.normalize();
+      en.kickVel = away.multiplyScalar(CONFIG.bossKickedSpeed);
+      en.headPopped = false;
+      setEnemyState(en, E.BOSS_KICKED);
+      const at = new THREE.Vector3();
+      en.torso.getWorldPosition(at);
+      spawnFleshBurst(at, 8, 4.5);
+      addHitstop(0.2); addShake(1.1);
+      doFlash(0.8, '#ffe0c8');
+    }
+  }
+  if (atk.t >= CONFIG.bossFinTotal) player.attack = null;
+}
+
+// 蹴り飛ばされた体。途中で頭が抜けてダクトへ逃げ、体は止まったところで死体になる
+function updateBossKicked(en, wdt) {
+  if (en.kickVel) {
+    en.group.position.addScaledVector(en.kickVel, wdt);
+    en.kickVel.multiplyScalar(Math.max(0, 1 - 3.2 * wdt));
+    const r = WALK.rooms[BOSS.room];
+    en.group.position.x = Math.max(r.x0 + 0.6, Math.min(r.x1 - 0.6, en.group.position.x));
+    en.group.position.z = Math.max(r.z0 + 0.6, Math.min(r.z1 - 0.6, en.group.position.z));
+  }
+  const k = Math.min(1, en.t / CONFIG.bossKickedTime);
+  en.pivotRoot.rotation.x = -1.3 * Math.sin(k * Math.PI * 0.5);     // 後ろへ倒れていく
+  en.pivotRoot.position.y = 0.25 * Math.sin(k * Math.PI);
+  if (!en.headPopped && en.t >= CONFIG.bossHeadPopAt) {
+    en.headPopped = true;
+    const at = new THREE.Vector3();
+    en.parts.HEAD.getWorldPosition(at);
+    spawnFleshBurst(at, 6, 3.5);
+    bossLaunchHead(en, at);
+  }
+  if (en.t >= CONFIG.bossKickedTime) {
+    if (!en.headPopped) {
+      const at = new THREE.Vector3();
+      en.parts.HEAD.getWorldPosition(at);
+      bossLaunchHead(en, at);
+    }
+    bossLeaveBody(en);
+    addShake(0.35);
+  }
+}
+
 /* ---------- 毎フレームの進行 ---------- */
-function updateBoss(dt, rdt) {
+function updateBoss(dt, rdt, wdt) {
   const en = bossMan;
   updateStolenArms(rdt);
+  updateBossBullets(wdt);
+  updateBossFleeHead(wdt);
 
   // 部屋Aに踏み込んだら自動でボス戦開始
   const idx = arenaRoomIndex();
@@ -6006,7 +6719,11 @@ function warpToBoss() {
   risingBlend = 0; headH = 0; headVy = 0; legDeploy = 0; possess = null;
   headDead = false; player.stagger = 0;
   spineGroup.visible = false; spiderGroup.visible = false;
-  player.attack = null; player.recoverT = 0; player.dodgeT = 0; punchBuffer = null;
+  player.attack = null; player.recoverT = 0; player.dodgeT = 0; player.invuln = 0;
+  punchBuffer = null;
+  detachTentacle();
+  cancelArmGrafts();
+  slowTimer = 0; slowScaleOverride = 1; hitstop = 0;
   player.hp = CONFIG.playerMaxHp;
   player.arms.LEFT = makeArmState(ARM.FIST);
   player.arms.RIGHT = makeArmState(ARM.FIST);
@@ -6014,8 +6731,8 @@ function warpToBoss() {
   clearAsuraArms();
   updateArmVisuals();
   playerPos.set((ARENA.gate.x0 + ARENA.gate.x1) / 2, 0, ARENA.z1 + 3.0);
-  yaw = Math.PI; pitch = 0;
-  showFeedback('DUCT MAN', '#59e0ff', 40);
+  // 入口（北）を向いて立つ。南向きだと振り返らないと部屋が見えない
+  yaw = 0; pitch = 0;
 }
 
 createBossMan();
@@ -7270,6 +7987,10 @@ function currentObjective() {
   const roomCenter = () => at((room.x0 + room.x1) / 2, (ARENA.z0 + ARENA.z1) / 2);
   switch (BOSS.phase) {
     case 'FIGHT':
+      if (bossMan.state === E.BOSS_DOWN) {
+        return { text: 'とどめを刺す（ライジングで首を斬る／殴って蹴り飛ばす）',
+          goal: _objGoal.copy(bossMan.group.position) };
+      }
       return { text: 'ダクトの男を倒す', goal: _objGoal.copy(bossMan.group.position) };
     case 'FLEE':
       return { text: '逃げるダクトの男を追う',
@@ -7448,7 +8169,8 @@ function animate() {
     const atk = player.attack;
     atk.t += dt;
     if (atk.type === 'finisher') {
-      if (atk.tent) updateTentFinisher(atk, dt); else updateFinisher(atk, dt);
+      if (atk.bossKick) updateBossKickFinisher(atk, dt);
+      else if (atk.tent) updateTentFinisher(atk, dt); else updateFinisher(atk, dt);
     } else {
       if (!atk.resolved && atk.t >= atk.startup) { atk.resolved = true; resolveAttack(atk); }
       // 触手の薙ぎ払いだけは、刃の角度を進めながら通った帯を毎フレーム判定する
@@ -7483,6 +8205,8 @@ function animate() {
     let hitEn = null, hitT = Infinity;
     for (const en of enemies) {
       if (en.state === E.DEAD || en.state === E.DODGE || en.state === E.GRABBED) continue;
+      if (en.state === E.FLEE || en.state === E.BOSS_KICKED) continue;
+      if (en.boss && !en.group.visible && en.state !== E.HIDDEN) continue;   // 退避中の男
       // 拘束中／飛んでいる敵は足が浮いているので、高さは必ず足元基準で見る
       const flying = (en.state === E.TETHER || en.state === E.THROWN);
       const r = (p.kind === 'bullet')
@@ -7500,7 +8224,14 @@ function animate() {
       p.dead = true;
       // 当たった点まで戻す。血と肉片が出る位置を当たった場所に合わせる
       p.obj.position.copy(from).addScaledVector(step, hitT);
-      if (p.kind === 'bullet') resolveBullet(p, hitEn);
+      if (hitEn.boss && hitEn.state === E.HIDDEN) {
+        // 隠れている男を撃った／手首を当てた＝見つけた
+        spawnFleshBurst(p.obj.position, 2, 2.2, null, 0.4);
+        bossFound(true);
+      } else if (hitEn.boss && hitEn.state === E.BOSS_DOWN) {
+        // HP0 の男は撃っても削れない。血だけ出る（とどめは近づいて刺す）
+        spawnFleshBurst(p.obj.position, 2, 2.2, null, 0.4);
+      } else if (p.kind === 'bullet') resolveBullet(p, hitEn);
       else {
         const en = hitEn;
         const attacking = (en.state === E.WINDUP || en.state === E.ACTIVE);
@@ -7538,7 +8269,7 @@ function animate() {
   updateCorpseFuses(wdt);
 
   /* --- ボス戦（ダクトの男）--- */
-  updateBoss(dt, rdt);
+  updateBoss(dt, rdt, wdt);
 
   /* --- デモステージのウェーブ --- */
   updateDemo(wdt);
@@ -7830,7 +8561,15 @@ function animate() {
   updateHealFx(rdt);
   if (hudSkillFire > 0) hudSkillFire -= rdt;
 
-  if (player.attack && player.attack.type === 'kick' && state === S.HUMAN) {
+  if (player.attack && player.attack.bossKick && state === S.HUMAN) {
+    // ダクトの男への蹴りのフィニッシャー。普通のキックより大きく踏み抜く
+    const a = player.attack;
+    const out = swingCurve(a.t, CONFIG.bossFinImpact, CONFIG.bossFinTotal) * 1.6;
+    fpFoot.visible = true;
+    const local = new THREE.Vector3(0.10, -0.55 + out * 0.12, -0.4 - out);
+    fpFoot.position.copy(local.applyQuaternion(camera.quaternion)).add(camera.position);
+    fpFoot.quaternion.copy(camera.quaternion);
+  } else if (player.attack && player.attack.type === 'kick' && state === S.HUMAN) {
     const a = player.attack;
     const out = swingCurve(a.t, a.startup + CONFIG.kickActive,
                            a.startup + CONFIG.kickRecover) * 1.1;
@@ -7875,6 +8614,7 @@ function animate() {
        : selectedTarget.kind === 'corpseArm' ? 'CORPSE ' + selectedTarget.key
        : selectedTarget.kind === 'groundArm' ? 'GROUND ARM ' + selectedTarget.part.key
        : selectedTarget.kind === 'rackArm' ? 'RACK ' + selectedTarget.slot.kind.toUpperCase()
+       : selectedTarget.kind === 'bossEat' ? 'BOSS EAT'
        : selectedTarget.entry.key) : 'NONE';
   const room = currentRoom();
   ui.room.textContent = DEMO.active
