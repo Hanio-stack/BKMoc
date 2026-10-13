@@ -1,58 +1,70 @@
+// 捕食：奪った腕を食べて回復／ライジングで取り返す（耐久が食べた分だけ減る）／食べ切る／食事中に殴る・スタンで落とす
 const { setup } = require('./bt');
 (async () => {
   const o = await setup();
   const { page, ev, wait } = o;
-  const log = (...a) => console.log(...a);
+  const waitEat = () => o.waitFor(() => bossMan.state === E.BOSS_EAT, 5000);
   await o.startBoss();
-  // --- ケース1：耐久60の右腕を奪わせる（男は弱っている＝食べる）---
+
+  o.section('ケース1：耐久60の右腕を奪わせて食べさせ、途中でライジングで取り返す');
   await ev(() => { bossMan.hp = bossMan.maxHp * 0.5; player.arms.RIGHT.hp = 60; player.arms.LEFT.lost = true; updateArmVisuals(); });
   await o.faceBoss(2.5);
   await ev(() => { bossMan.riseCd = 0; });
-  for (let i = 0; i < 40 && (await ev(() => bossMan.state)) !== 'BOSS_EAT'; i++) await wait(100);
-  log('state', await ev(() => bossMan.state), 'eat', await ev(() => bossMan.eat && JSON.stringify(bossMan.eat.armState)), 'playerR lost', await ev(() => player.arms.RIGHT.lost));
+  o.expect('弱っているので奪った腕を食べ始める（BOSS_EAT）', await waitEat(), true);
+  o.expect('食べている腕は耐久60のまま', await ev(() => bossMan.eat.armState.hp), 60);
+  o.expect('プレイヤーの右腕は奪われている', await ev(() => player.arms.RIGHT.lost), true);
   const hp0 = await ev(() => bossMan.hp);
-  for (let i = 0; i < 30 && (await ev(() => bossMan.eat.p)) < 0.5; i++) await wait(100);
-  const p = await ev(() => bossMan.eat.p), hp1 = await ev(() => bossMan.hp);
-  log('p', p.toFixed(2), 'boss hp', hp0.toFixed(1), '->', hp1.toFixed(1), 'sub:', await ev(() => subtitleEl.textContent));
+  await o.waitFor(() => bossMan.eat && bossMan.eat.p >= 0.5, 5000);
+  const hp1 = await ev(() => bossMan.hp);
+  o.expectTrue('食べている間は HP が回復する', hp1 > hp0, [+hp0.toFixed(1), +hp1.toFixed(1)]);
+  o.expectTrue('食レポの字幕が出ている', await ev(() => !subtitleEl.classList.contains('hidden') && subtitleEl.textContent.length > 0), await ev(() => subtitleEl.textContent));
   await page.screenshot({ path: __dirname + '/shots/eat_mid.png' });
-  // ライジングで取り返す（右クリック＝右手）
   await page.keyboard.down('KeyQ'); await wait(600);
-  const aimed = await o.aimAtEl('.shoulder-target.eat');
+  o.expect('ライジングで食べている腕の□を狙えた', await o.aimAtEl('.shoulder-target.eat'), true);
   const pAt = await ev(() => bossMan.eat ? bossMan.eat.p : -1);
   await page.screenshot({ path: __dirname + '/shots/eat_aim.png' });
   await page.mouse.down({ button: 'right' }); await page.mouse.up({ button: 'right' });
   await wait(200);
-  log('aimed', aimed, 'p at cut', pAt.toFixed(3), 'boss', await ev(() => bossMan.state), 'eat', await ev(() => !!bossMan.eat), 'sub:', await ev(() => subtitleEl.textContent));
+  o.expect('取り返すと食事が止まる', await ev(() => !!bossMan.eat), false);
+  o.expectTrue('男は食事以外の状態になる', (await ev(() => bossMan.state)) !== 'BOSS_EAT', await ev(() => bossMan.state));
   await page.keyboard.up('KeyQ'); await wait(1500);
   const hpAfter = await ev(() => bossMan.hp);
   await wait(1500);
-  log('player R', await ev(() => JSON.stringify(player.arms.RIGHT)), 'expected hp', Math.max(1, Math.round(60 - 100 * 0.2 * pAt)));
-  log('boss hp after retrieve', hpAfter.toFixed(1), '1.5s later', (await ev(() => bossMan.hp)).toFixed(1));
-  // --- ケース2：食べ切らせる ---
+  o.expect('右腕が戻った', await ev(() => player.arms.RIGHT.lost), false);
+  o.expect('右腕の耐久は食べた分だけ減る（60 − 100×0.2×進み具合）', await ev(() => player.arms.RIGHT.hp), Math.max(1, Math.round(60 - 100 * 0.2 * pAt)));
+  o.expect('取り返した後は回復しない', +(await ev(() => bossMan.hp)).toFixed(1), +hpAfter.toFixed(1));
+
+  o.section('ケース2：食べ切らせる');
   await ev(() => { bossMan.eatCd = 0; bossMan.riseCd = 0; bossMan.eatHealed = 0; bossMan.hp = bossMan.maxHp * 0.5; player.arms.LEFT = makeArmState(ARM.GUN, { hp: 80 }); player.arms.RIGHT.lost = true; updateArmVisuals(); });
   await o.faceBoss(2.5);
-  for (let i = 0; i < 40 && (await ev(() => bossMan.state)) !== 'BOSS_EAT'; i++) await wait(100);
+  o.expect('銃腕を食べ始める', await waitEat(), true);
   const subs = new Set();
   const hpA = await ev(() => bossMan.hp);
   for (let i = 0; i < 80 && (await ev(() => !!bossMan.eat)); i++) { subs.add(await ev(() => subtitleEl.classList.contains('hidden') ? '' : subtitleEl.textContent)); await wait(100); }
   await wait(300);
   subs.add(await ev(() => subtitleEl.textContent));
-  log('full eat: boss hp', hpA.toFixed(1), '->', (await ev(() => bossMan.hp)).toFixed(1), 'healed', (await ev(() => bossMan.eatHealed)).toFixed(1), 'state', await ev(() => bossMan.state));
-  log('subs:', [...subs].filter(Boolean).join(' / '));
-  log('eat target visible?', await ev(() => !document.querySelector('.shoulder-target.eat').classList.contains('hidden')));
-  // --- ケース3：食べている間に殴る ---
+  const healed = await ev(() => bossMan.eatHealed), maxHp = await ev(() => bossMan.maxHp);
+  o.expect('食べ切ると食事は終わる', await ev(() => !!bossMan.eat), false);
+  o.expectTrue('HP が回復した', (await ev(() => bossMan.hp)) > hpA, [+hpA.toFixed(1), +(await ev(() => bossMan.hp)).toFixed(1)]);
+  o.expectTrue('回復量はラウンドの上限（最大HPの24%）以内', healed > 0 && healed <= maxHp * 0.24 + 0.01, +healed.toFixed(1));
+  o.expectTrue('食レポに★の評価が出た', [...subs].some((s) => s.includes('★')), [...subs].filter(Boolean));
+  o.expect('食べ切った腕は戻らない（左腕なし）', await ev(() => player.arms.LEFT.lost), true);
+  o.expect('食べている腕の□は消えている', await ev(() => bossEatTargetEl.classList.contains('hidden')), true);
+
+  o.section('ケース3：食事中に殴る → 食べ続けて文句を言う／スタンさせると腕を落とす');
   await ev(() => { bossMan.eatCd = 0; bossMan.riseCd = 0; bossMan.eatHealed = 0; bossMan.hp = bossMan.maxHp * 0.5; player.arms.LEFT = makeArmState(ARM.FIST); player.arms.RIGHT = makeArmState(ARM.FIST); updateArmVisuals(); });
   await o.faceBoss(2.5);
-  for (let i = 0; i < 40 && (await ev(() => bossMan.state)) !== 'BOSS_EAT'; i++) await wait(100);
+  o.expect('食べ始める', await waitEat(), true);
   await ev(() => { playerPos.set(bossMan.group.position.x, 0, bossMan.group.position.z + 1.6); });
-  const left = await ev(() => player.arms.LEFT.lost ? 'RIGHT' : 'LEFT');
-  await page.mouse.down({ button: left === 'LEFT' ? 'left' : 'right' }); await wait(60); await page.mouse.up({ button: left === 'LEFT' ? 'left' : 'right' });
+  const btn = await ev(() => player.arms.LEFT.lost ? 'right' : 'left');
+  await page.mouse.down({ button: btn }); await wait(60); await page.mouse.up({ button: btn });
   await wait(400);
-  log('hit while eating: state', await ev(() => bossMan.state), 'sub:', await ev(() => subtitleEl.textContent), 'queue', await ev(() => subtitleQueue.length));
-  // スタンさせると腕を落とす
+  o.expect('1発では食事は止まらない', await ev(() => bossMan.state), 'BOSS_EAT');
+  o.expectTrue('文句の字幕が出る', await ev(() => !subtitleEl.classList.contains('hidden')), await ev(() => subtitleEl.textContent));
   await ev(() => { applyStun(bossMan, 999); });
   await wait(1200);
-  log('stunned: state', await ev(() => bossMan.state), 'eat', await ev(() => !!bossMan.eat), 'ground arms', await ev(() => JSON.stringify(severedParts.map(p => p.armState && p.armState.hp))));
-  log('errors', JSON.stringify(o.errors));
-  await o.browser.close();
+  o.expect('スタンする', await ev(() => bossMan.state), 'STUNNED');
+  o.expect('スタンで食事が止まる', await ev(() => !!bossMan.eat), false);
+  o.expect('食べかけの腕が床に落ちている', await ev(() => severedParts.filter((p) => p.armState).length), 1);
+  await o.finish();
 })();

@@ -614,6 +614,7 @@ const CONFIG = {
   bossJumpscareDelay: 1.35,      // カウント0からジャンプスケアまでの「間」(s)
   bossJumpscareTurn: 0.20,       // カメラが後ろを向くまで(s)
   bossJumpscareHold: 1.05,       // 顔アップの長さ(s)
+  bossFleeRise: 0.55,            // R1/R2：HP0 で首が伸びて頭が抜けるまで(s)
   bossFleeTravel: 1.6,           // 頭がダクトへ飛び込むまで(s)
   bossRoundCorpses: 14,          // 第1ラウンドの部屋に置く死体
   bossHideCorpses: 22,           // かくれんぼ部屋に置く死体
@@ -5332,16 +5333,18 @@ function updateEnemyUi() {
            ・ライジングで腕を刈りに来る（BOSS_RISE）。スローにはならない。
              ドッジ（白く光った瞬間ならジャスト）／キック／間合いの外で防げる
            ・奪った腕は「装着」するか「食べる」（下記）
-         HP0 でフィニッシャースタン（BOSS_DOWN）。勝手には逃げない。
-           ・ライジングで首を斬る → 頭がダクトへ逃げ、体は死体として残る
-           ・殴る／蹴る（何でも）→ 踏み込んで蹴り飛ばす → 飛ぶ体から頭が抜けて逃げる
+         HP0 で首が伸びて頭が抜け、ダクトへ逃げる。体は死体として残る（R1・R2）。
          通常スタンでは腕しか斬れない（首の□は出ない）。
      追う プレイヤーもライジング→頭モードでダクトを抜ける
      R2  暗い部屋。大量の死体のどこかに頭を挿して隠れている。
          10秒以内に見つけて殴れば先制ダメージ入りで開幕。
          見つけられなければジャンプスケアから開幕。
          開幕と同時に部屋の死体をほとんど爆散させる（腕と体の補給を絞る）
-     R3  レイアウトを変えて同じ流れ。ここで倒すと完全に逃走してボス戦終了。
+     R3  レイアウトを変えて同じ流れ。ただし HP0 でフィニッシャースタン（BOSS_DOWN）になり、
+         勝手には逃げない。プレイヤーがとどめを刺すまで動かない。
+           ・ライジングで首を斬る → 頭がダクトへ逃げ、体は死体として残る
+           ・殴る／蹴る（何でも）→ 踏み込んで蹴り飛ばす → 飛ぶ体から頭が抜けて逃げる
+         どちらでもボス戦終了（完全には死なない。頭は逃げる）。
 
    隠れている男を見分ける手掛かりは「頭が付いていること」。
    この世界の死体は全部首なしなので、暗がりの中で頭のある1体を探すことになる。
@@ -5619,7 +5622,7 @@ function createBossMan() {
 // 伸びる首と刃の見た目。riseK は BOSS_RISE / FLEE の進行に合わせて動く
 function updateBossRig(en, dt) {
   const rig = en.rig;
-  const rising = (en.state === E.BOSS_RISE);
+  const rising = (en.state === E.BOSS_RISE || (en.state === E.FLEE && en.fleeRise));
   if (!rising) rig.riseK += (0 - rig.riseK) * Math.min(1, dt * 9);
   const k = rig.riseK;
   const lift = 0.95 * k;
@@ -5718,6 +5721,7 @@ function resetBoss() {
     en.kickCd = 0; en.riseCd = 0; en.gunCd = 0; en.eatCd = 0; en.eatHealed = 0;
     en.activeHitDone = false; en.grabK = 0; en.riseDone = false; en.shotDone = false;
     en.tetherVel.set(0, 0, 0); en.throwVel = null; en.kickVel = null;
+    en.poise = 0; en.fleeRise = false;
     en.group.visible = false;
     en.group.position.set(0, 0, ARENA.z0 - 20);   // 画面外へ退避
     bossRestoreBody(en);
@@ -5776,6 +5780,7 @@ function beginRound(idx, preempt, burst) {
   en.cooldown = 1.2; en.kickCd = 1.5; en.riseCd = 4.0; en.gunCd = 2.0;
   en.eatCd = 0; en.eatHealed = 0;
   en.riseDone = false; en.shotDone = false; en.kickVel = null;
+  en.poise = 0; en.fleeRise = false;
   setEnemyState(en, E.IDLE);
   bossUi.hud.classList.remove('hidden');
 
@@ -5808,11 +5813,42 @@ function burstCorpseSpectacle(c) {
 
 /* ---------- 倒された ---------- */
 function bossDefeated(en) {
-  // HP0 で勝手に逃げない。フィニッシャースタンに入り、プレイヤーがとどめを刺すまで待つ
-  enterBossDown(en);
+  // R1・R2 は HP0 でそのまま逃げる（首が伸びて頭が抜け、体は死体として残る）。
+  // とどめの入力（首切り／蹴り）が要るのは最終ラウンドの R3 だけ
+  if (BOSS.round >= 3) enterBossDown(en);
+  else startBossAutoFlee(en);
 }
 
-// HP0 のフィニッシャースタン。通常スタン（STUNNED）とは別の状態で、
+// R1・R2 の HP0。フィニッシャースタンは経由せず、首を伸ばして頭がダクトへ逃げる
+function startBossAutoFlee(en) {
+  if (en.state === E.FLEE || en.state === E.BOSS_KICKED || en.state === E.BOSS_DOWN) return;
+  if (tentHold && tentHold.enemy === en) detachTentacle();
+  en.hp = 0;
+  en.stun = 0;
+  en.shoveLeft = 0;
+  en.throwVel = null;
+  en.group.position.y = 0;
+  en.riseDone = true; en.shotDone = true;
+  if (en.eat) bossDropEatArm(en);
+  setEnemyState(en, E.FLEE);
+  en.fleeRise = true;              // 首が伸びている途中（頭はまだ体に付いている）
+  addHitstop(0.2); addShake(0.5); doFlash(0.4, '#ffd0c0');
+}
+
+// 首が伸びきったら頭を放す（updateBossState から呼ぶ）
+function updateBossAutoFlee(en) {
+  en.rig.riseK = Math.min(1, en.t / CONFIG.bossFleeRise);
+  if (en.t < CONFIG.bossFleeRise) return;
+  en.fleeRise = false;
+  const at = new THREE.Vector3();
+  en.parts.HEAD.getWorldPosition(at);
+  bossLaunchHead(en, at);
+  bossLeaveBody(en);
+  addShake(0.4);
+  doFlash(0.25, '#9ce8ff');
+}
+
+// HP0 のフィニッシャースタン（R3 のみ）。通常スタン（STUNNED）とは別の状態で、
 // 首と腕に□が出る。殴る・蹴るなど何で触れても蹴りのフィニッシャーになる
 function enterBossDown(en) {
   if (en.state === E.BOSS_DOWN || en.state === E.BOSS_KICKED || en.state === E.FLEE) return;
@@ -5865,6 +5901,8 @@ function bossLeaveBody(en) {
   BOSS.spawned.push(c);
   en.group.visible = false;
   en.kickVel = null;
+  en.fleeRise = false;
+  en.rig.riseK = 0;
   en.pivotRoot.rotation.set(0, 0, 0);
   en.pivotRoot.position.set(0, 0, 0);
   setEnemyState(en, E.FLEE);
@@ -6100,7 +6138,10 @@ function updateBossState(en, wdt) {
   // どこまでも追ってきて、見えないまま殴ってくる（リセットから約40秒後に届く）
   if (BOSS.phase === 'IDLE') return true;
   if (en.state === E.HIDDEN) return true;              // 死体のフリ。何もしない
-  if (en.state === E.FLEE) return true;                // 体はもう死体。頭は updateBossFleeHead
+  if (en.state === E.FLEE) {                           // 体はもう死体。頭は updateBossFleeHead
+    if (en.fleeRise) updateBossAutoFlee(en);           // R1/R2：首が伸びている途中
+    return true;
+  }
   if (en.state === E.BOSS_DOWN) return true;           // とどめを待つ。動かない
   if (en.state === E.BOSS_KICKED) { updateBossKicked(en, wdt); return true; }
 
