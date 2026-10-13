@@ -2944,15 +2944,21 @@ function updateEnemyVisual(en, wdt) {
     p.rotation.x += (0.18 - p.rotation.x) * Math.min(1, wdt * 8);
     p.rotation.z = Math.sin(worldTime * 2.2) * 0.03;
     p.position.y += (0 - p.position.y) * Math.min(1, wdt * 8);
+    // 腕は前へ上げて内側へ寄せる（手先が口元で揃う）。真っすぐ前に突き出すと
+    // 間近のカメラには2本の棒が画面を横切るように見える
     for (const sd of ['LEFT', 'RIGHT']) {
       const arm = en.parts[sd];
-      if (arm.parent === p) arm.rotation.x += (-1.75 - arm.rotation.x) * Math.min(1, wdt * 10);
+      if (arm.parent !== p) continue;
+      arm.rotation.x += (-1.25 - arm.rotation.x) * Math.min(1, wdt * 10);
+      const inward = (sd === 'LEFT') ? -0.75 : 0.75;
+      arm.rotation.z += (inward - arm.rotation.z) * Math.min(1, wdt * 10);
     }
   } else if (en.state === E.BOSS_DOWN) {
-    // 膝をついて動かない。首と腕を差し出すように前のめり
-    p.rotation.x += (0.55 - p.rotation.x) * Math.min(1, wdt * 6);
+    // 膝をついて動かない。うなだれる程度に留める（深く前のめりにすると、
+    // 目の前で膝をついた男の頭がカメラに刺さって画面を埋める）
+    p.rotation.x += (0.16 - p.rotation.x) * Math.min(1, wdt * 6);
     p.rotation.z = Math.sin(worldTime * 2.5 + en.swayPhase) * 0.05;
-    p.position.y += (-0.42 - p.position.y) * Math.min(1, wdt * 6);
+    p.position.y += (-0.55 - p.position.y) * Math.min(1, wdt * 6);
     for (const sd of ['LEFT', 'RIGHT']) {
       const arm = en.parts[sd];
       if (arm.parent === p) arm.rotation.x += (0.25 - arm.rotation.x) * Math.min(1, wdt * 6);
@@ -2963,6 +2969,10 @@ function updateEnemyVisual(en, wdt) {
     p.rotation.x += (0 - p.rotation.x) * Math.min(1, wdt * 8);
     p.rotation.z += (sway - p.rotation.z) * Math.min(1, wdt * 6);
     p.position.y += (0 - p.position.y) * Math.min(1, wdt * 8);
+    if (en.boss) for (const sd of ['LEFT', 'RIGHT']) {
+      const arm = en.parts[sd];
+      if (arm.parent === p) arm.rotation.z += (0 - arm.rotation.z) * Math.min(1, wdt * 8);
+    }
     for (const s of ['LEFT', 'RIGHT']) {
       const arm = en.parts[s];
       if (arm.parent === p) arm.rotation.x += (0 - arm.rotation.x) * Math.min(1, wdt * 8);
@@ -2977,7 +2987,7 @@ function updateEnemyVisual(en, wdt) {
     // 赤い光 = この距離ならQでライジングに入れる、という合図
     const near = playerPos.distanceTo(en.group.position) <= CONFIG.risingInteractRange;
     if (near || state !== S.HUMAN) {
-      glowOpacity = 0.45 + Math.sin(worldTime * 7) * 0.18;
+      glowOpacity = (en.state === E.BOSS_DOWN ? 0.22 : 0.45) + Math.sin(worldTime * 7) * 0.18;
       en.headMat.color.setHex(0xff5544);
     } else en.headMat.color.setHex(en.headColor);
   } else en.headMat.color.setHex(en.headColor);
