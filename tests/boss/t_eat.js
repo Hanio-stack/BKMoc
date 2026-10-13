@@ -5,6 +5,9 @@ const { setup } = require('./bt');
   const { page, ev, wait } = o;
   const waitEat = () => o.waitFor(() => bossMan.state === E.BOSS_EAT, 5000);
   await o.startBoss();
+  // 取り返した瞬間の食べ具合（eatenArmState が呼ばれたときの p）を記録する。
+  // テスト側で読んだ p は数フレーム古く、遅いマシンでは計算が1ずれる
+  await ev(() => { const orig = eatenArmState; eatenArmState = function (e) { window.__eatP = e.p; return orig(e); }; });
 
   o.section('ケース1：耐久60の右腕を奪わせて食べさせ、途中でライジングで取り返す');
   await ev(() => { bossMan.hp = bossMan.maxHp * 0.5; player.arms.RIGHT.hp = 60; player.arms.LEFT.lost = true; updateArmVisuals(); });
@@ -31,7 +34,9 @@ const { setup } = require('./bt');
   const hpAfter = await ev(() => bossMan.hp);
   await wait(1500);
   o.expect('右腕が戻った', await ev(() => player.arms.RIGHT.lost), false);
-  o.expect('右腕の耐久は食べた分だけ減る（60 − 100×0.2×進み具合）', await ev(() => player.arms.RIGHT.hp), Math.max(1, Math.round(60 - 100 * 0.2 * pAt)));
+  const pCut = await ev(() => window.__eatP);
+  o.expectTrue('取り返した瞬間の食べ具合は途中（0〜1）', pCut > 0 && pCut < 1 && pCut >= pAt, [+pAt.toFixed(3), +pCut.toFixed(3)]);
+  o.expect('右腕の耐久は食べた分だけ減る（60 − 100×0.2×進み具合）', await ev(() => player.arms.RIGHT.hp), Math.max(1, Math.round(60 - 100 * 0.2 * pCut)));
   o.expect('取り返した後は回復しない', +(await ev(() => bossMan.hp)).toFixed(1), +hpAfter.toFixed(1));
 
   o.section('ケース2：食べ切らせる');

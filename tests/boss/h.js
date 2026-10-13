@@ -12,7 +12,8 @@ async function open(opts = {}) {
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
   const vw = opts.w || 960, vh = opts.h || 540;
-  const ctx = await browser.newContext({ viewport: { width: vw, height: vh } });
+  // PW_DPR：描画解像度の倍率。遅いマシンでフレームが落ちて実時間とずれるときに下げる（例 0.5）
+  const ctx = await browser.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: +process.env.PW_DPR || 1 });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e) + ' @ ' + String(e.stack).split('\n').slice(1, 3).join(' | ')));

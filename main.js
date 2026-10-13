@@ -4699,6 +4699,9 @@ function updateTentacleArms(rdt) {
      耐久は腕ごとに減って 0 で肉片になる。HUDには出さない。
      生えたときに本体の腕の種類をコピーし、ライジングで本体の腕を
      交換しても変わらない（本体の腕が無ければ拳が生える）。
+     ライジングに入ると、生える演出を逆再生して腕をしまう（後から生えた腕から先に）。
+     ライジングが終わると、また同じ演出で生えてくる。
+     しまっている間も腕の種類と耐久はそのまま。
 
    回復（HEAL）:
      緑の光の粒が立ちのぼり、画面の縁が緑に光って、体と腕のHPを全回復する。
@@ -4710,7 +4713,8 @@ const ASURA_SLOTS = [
   { pos: [0.55, -0.05, -0.40], bodyAng: 1.62 },   // 3時（左は9時）
   { pos: [0.45, 0.26, -0.40], bodyAng: 2.25 },    // 2時（左は10時）
 ];
-let asuraArms = [];        // { side, slot, st, hand, pivot, bodyMesh, grow, sprouted, queue, act, dirToggle }
+let asuraArms = [];        // { side, slot, order, st, hand, pivot, bodyMesh, grow, sprouted, queue, act, dirToggle }
+let asuraT = 0;            // 生える演出の時間。人間モードで進み、ライジング中は巻き戻る（＝腕をしまう）
 let asuraCombo = 0;        // 追加の腕のヒット数（表示用）
 let asuraComboT = 0;
 
@@ -4754,6 +4758,7 @@ function castAsura() {
 
 function spawnAsuraArms(states) {
   clearAsuraArms();
+  asuraT = 0;
   states.forEach((d, i) => {
     const sign = d.side === 'LEFT' ? -1 : 1;
     const st = cloneArmState(d.st);
@@ -4772,8 +4777,8 @@ function spawnAsuraArms(states) {
     pivot.scale.y = 0.01;
     playerGroup.add(pivot);
     asuraArms.push({
-      side: d.side, slot: d.slot, st, hand, pivot, bodyMesh,
-      grow: -i * CONFIG.asuraGrowStagger,   // 負の間はまだ生えていない
+      side: d.side, slot: d.slot, order: i, st, hand, pivot, bodyMesh,
+      grow: -i * CONFIG.asuraGrowStagger,   // 負の間はまだ生えていない（asuraT − order×ずらし）
       sprouted: false, queue: [], act: null, dirToggle: 1,
     });
   });
@@ -4927,10 +4932,17 @@ function updateAsuraArms(dt, rdt) {
   const et = clock.elapsedTime;
   const step = Math.max(1 / 240, Math.min(rdt, 1 / 20));
 
+  // 生える演出の時間。ライジング中は巻き戻して逆再生（腕をしまう）、
+  // 終わったらまた進めて生やす。途中で切り替えても今の生え具合から続く
+  const inRising = (state === S.RISE_IN || state === S.RISING || state === S.RISE_OUT);
+  const fullT = (asuraArms.length - 1) * CONFIG.asuraGrowStagger + CONFIG.asuraGrowTime;
+  asuraT = Math.max(0, Math.min(fullT, asuraT + (inRising ? -rdt : rdt)));
+
   for (const xa of asuraArms) {
-    xa.grow += rdt;
+    xa.grow = asuraT - xa.order * CONFIG.asuraGrowStagger;
     if (xa.st.lost) { xa.hand.visible = false; xa.pivot.visible = false; continue; }
     const gk = asuraGrowK(xa);
+    if (gk <= 0) xa.sprouted = false;   // しまいきったら、次に生えるときも肉が散る
     xa.pivot.visible = gk > 0;
     xa.pivot.scale.y = Math.max(0.01, gk);
 

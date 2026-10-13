@@ -3,6 +3,8 @@ const { setup } = require('./bt');
 (async () => {
   const o = await setup();
   const { page, ev, wait } = o;
+  // 男が体を捨てたときに作られた死体を覚えておく
+  await ev(() => { const orig = bossLeaveBody; bossLeaveBody = function (en) { orig(en); window.__leftBody = BOSS.spawned[BOSS.spawned.length - 1]; }; });
   const snap = () => ev(() => ({ phase: BOSS.phase, round: BOSS.round, state: bossMan.state }));
   // 開始直後は待機（IDLE）か歩き出し（MOVE）のどちらか
   const startSnap = async () => { const s = await snap(); if (s.state === 'MOVE') s.state = 'IDLE'; return s; };
@@ -21,7 +23,7 @@ const { setup } = require('./bt');
     o.section(`R${round}：HP0 で自動逃走`);
     o.expect(`R${round} 開始時の状態（IDLE/MOVE）`, await startSnap(), { phase: 'FIGHT', round, state: 'IDLE' });
     o.expect(`R${round} 開始時のアーマー（poise）は0`, await ev(() => bossMan.poise), 0);
-    const corpsesBefore = await ev(() => BOSS.spawned.filter((c) => corpses.indexOf(c) >= 0).length);
+    await ev(() => { window.__leftBody = null; });
     o.expect('殴って HP0 になった', await lethalPunch(), true);
     await wait(200);
     const st = await o.states();
@@ -29,7 +31,10 @@ const { setup } = require('./bt');
     o.expect('HP0 直後は FLEE（首が伸びて頭が抜ける途中）', (await snap()).state, 'FLEE');
     o.expect('フィニッシャースタンの□（首）は出ていない', await ev(() => partTargetable(bossMan, 'HEAD')), false);
     o.expect('頭がダクトへ向かっている（FLEE）', await o.waitFor(() => BOSS.phase === 'FLEE' && fleeHead.visible, 3000), true);
-    o.expect('体が死体として残った', await ev(() => BOSS.spawned.filter((c) => corpses.indexOf(c) >= 0).length), corpsesBefore + 1);
+    o.expect('体が死体として残った（男のいた場所に死体がある）', await ev(() => {
+      const c = window.__leftBody;
+      return !!c && corpses.indexOf(c) >= 0 && c.group.position.distanceTo(bossMan.group.position) < 0.5;
+    }), true);
     o.expect('本体は隠れている', await ev(() => bossMan.group.visible), false);
     o.expect('逃走が終わって次の部屋で待つ（WAIT）', await o.waitFor(() => BOSS.phase === 'WAIT', 6000), true);
     o.expect('逃げた頭は消えた', await ev(() => fleeHead.visible || !!BOSS.flee), false);
