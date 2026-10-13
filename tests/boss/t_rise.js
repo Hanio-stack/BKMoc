@@ -14,14 +14,16 @@ const { setup } = require('./bt');
     return ok;
   };
 
+  // ゲーム内時間の進み方（実時間に対する比）。描画が遅いマシンでは普段から1より小さいので、
+  // 「普段の速さ」を先に測っておき、男のライジング中もそれと同じであることを確かめる
+  const rate = async (ms) => { const a = await ev(() => [worldTime, performance.now()]); await wait(ms); const b = await ev(() => [worldTime, performance.now()]); return (b[0] - a[0]) / ((b[1] - a[1]) / 1000); };
+
   o.section('1) 何もしないと腕を1本取られる。スローにならない');
   await reset();
+  const base = await rate(600);
   await startRise();
-  const w0 = await ev(() => [worldTime, performance.now()]);
-  await wait(600);
-  const w1 = await ev(() => [worldTime, performance.now()]);
-  const ratio = (w1[0] - w0[0]) / ((w1[1] - w0[1]) / 1000);
-  o.expectTrue('ゲーム内時間が実時間どおり進む（スローなし）', ratio > 0.8, +ratio.toFixed(2));
+  const ratio = await rate(600);
+  o.expectTrue('ゲーム内時間が普段どおり進む（スローなし。普段の8割以上）', ratio > base * 0.8, [+ratio.toFixed(2), +base.toFixed(2)]);
   o.expect('スロー演出は掛かっていない', await ev(() => slowTimer), 0);
   o.expect('プレイヤーはライジング状態にならない', await ev(() => state), 'HUMAN');
   await wait(1200);
