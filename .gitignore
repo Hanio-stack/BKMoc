@@ -12,3 +12,4 @@ fix/
 # テスト用の依存（tests/boss で npm install する）
 node_modules/
 package-lock.json
+tests/boss/shots/

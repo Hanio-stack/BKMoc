@@ -14,12 +14,12 @@ const { setup } = require('./bt');
   for (let i = 0; i < 30 && (await ev(() => bossMan.eat.p)) < 0.5; i++) await wait(100);
   const p = await ev(() => bossMan.eat.p), hp1 = await ev(() => bossMan.hp);
   log('p', p.toFixed(2), 'boss hp', hp0.toFixed(1), '->', hp1.toFixed(1), 'sub:', await ev(() => subtitleEl.textContent));
-  await page.screenshot({ path: '../hud/eat_mid.png' });
+  await page.screenshot({ path: __dirname + '/shots/eat_mid.png' });
   // ライジングで取り返す（右クリック＝右手）
   await page.keyboard.down('KeyQ'); await wait(600);
   const aimed = await o.aimAtEl('.shoulder-target.eat');
   const pAt = await ev(() => bossMan.eat ? bossMan.eat.p : -1);
-  await page.screenshot({ path: '../hud/eat_aim.png' });
+  await page.screenshot({ path: __dirname + '/shots/eat_aim.png' });
   await page.mouse.down({ button: 'right' }); await page.mouse.up({ button: 'right' });
   await wait(200);
   log('aimed', aimed, 'p at cut', pAt.toFixed(3), 'boss', await ev(() => bossMan.state), 'eat', await ev(() => !!bossMan.eat), 'sub:', await ev(() => subtitleEl.textContent));

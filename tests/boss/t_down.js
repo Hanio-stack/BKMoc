@@ -18,17 +18,17 @@ const { setup } = require('./bt');
   // 首の□が出る（ライジング）
   await page.keyboard.down('KeyQ'); await wait(700);
   log('[R1] down targets:', await ev(() => targetEntries.filter(t => t.enemy === bossMan).map(t => t.key + ':' + (t.el.classList.contains('hidden') ? 'h' : 'S')).join(' ')));
-  await page.screenshot({ path: '../hud/down_rise.png' });
+  await page.screenshot({ path: __dirname + '/shots/down_rise.png' });
   await page.keyboard.up('KeyQ'); await wait(500);
   // 殴る → 蹴りのフィニッシャー（連打しても1回だけ）
   await o.faceBoss(2.0);
   const php = await ev(() => player.arms.LEFT.hp);
   for (let i = 0; i < 4; i++) { await page.mouse.down({ button: 'left' }); await wait(40); await page.mouse.up({ button: 'left' }); await wait(60); }
   await wait(250);
-  await page.screenshot({ path: '../hud/kick_fin.png' });
+  await page.screenshot({ path: __dirname + '/shots/kick_fin.png' });
   log('[R1] finisher started:', await ev(() => player.attack && player.attack.bossKick), 'arm hp unchanged', php, '->', await ev(() => player.arms.LEFT.hp));
   await wait(400);
-  await page.screenshot({ path: '../hud/kick_fin2.png' });
+  await page.screenshot({ path: __dirname + '/shots/kick_fin2.png' });
   await wait(1500);
   log('[R1] after kick:', await info(), '| corpses in arena', await ev(() => BOSS.spawned.length), '| sub:', await ev(() => subtitleEl.textContent));
   await wait(1500);
@@ -51,7 +51,7 @@ const { setup } = require('./bt');
   log('[R2] aimed head', await o.aimAtEl('#tgH'));
   await page.mouse.down({ button: 'left' }); await page.mouse.up({ button: 'left' });
   await wait(300);
-  await page.screenshot({ path: '../hud/head_cut.png' });
+  await page.screenshot({ path: __dirname + '/shots/head_cut.png' });
   await page.keyboard.up('KeyQ');
   await wait(2500);
   log('[R2] after head cut:', await info());

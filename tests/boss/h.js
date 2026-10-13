@@ -3,6 +3,7 @@
 // Chromium の場所は PW_CHROMIUM で指定できる（未指定なら Playwright 標準）
 const { chromium } = require('playwright');
 const path = require('path');
+require('fs').mkdirSync(path.join(__dirname, 'shots'), { recursive: true });   // スクリーンショットの置き場（git管理外）
 const ROOT = path.resolve(__dirname, '../..');
 const THREE_JS = require.resolve('three/build/three.min.js');
 async function open(opts = {}) {

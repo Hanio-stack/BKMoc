@@ -12,7 +12,7 @@ const { setup } = require('./bt');
   for (let i = 0; i < 60 && !(await ev(() => player.arms.LEFT.lost)); i++) await wait(50);
   await wait(800);
   log('[1] boss arms after steal:', await bossArms(), '| bonusDamage', await ev(() => bossMan.bonusDamage));
-  await page.screenshot({ path: '../hud/equip_gun.png' });
+  await page.screenshot({ path: __dirname + '/shots/equip_gun.png' });
 
   // 2) 離れると撃ってくる。弾に当たると減る／ドッジで避けられる
   await ev(() => { player.arms.RIGHT = makeArmState(ARM.FIST); updateArmVisuals(); player.hp = 100; bossMan.cooldown = 0; bossMan.riseCd = 99; bossMan.gunCd = 0; });
@@ -20,7 +20,7 @@ const { setup } = require('./bt');
   let shot = false;
   for (let i = 0; i < 60; i++) { const s = await ev(() => bossMan.state); if (s === 'BOSS_SHOOT') { shot = true; break; } await wait(50); }
   await wait(900);
-  await page.screenshot({ path: '../hud/gun_shot.png' });
+  await page.screenshot({ path: __dirname + '/shots/gun_shot.png' });
   await wait(800);
   log('[2] boss shot:', shot, 'player hp', await ev(() => player.hp), 'bullets left', await ev(() => bossBullets.length));
   // ドッジで避ける
@@ -36,7 +36,7 @@ const { setup } = require('./bt');
   await page.keyboard.down('KeyQ'); await wait(700);
   const tg = await ev(() => targetEntries.filter(t => t.enemy === bossMan).map(t => t.key + ':' + (t.el.classList.contains('hidden') ? 'hidden' : 'shown')).join(' '));
   log('[3] stunned targets:', tg, 'state', await ev(() => bossMan.state));
-  await page.screenshot({ path: '../hud/stun_targets.png' });
+  await page.screenshot({ path: __dirname + '/shots/stun_targets.png' });
   // 銃腕（左）を左クリックで斬る
   const idx = await ev(() => targetEntries.findIndex(t => t.enemy === bossMan && t.key === 'LEFT'));
   await ev((i) => { targetEntries[i].el.id = 'tgL'; }, idx);
@@ -54,7 +54,7 @@ const { setup } = require('./bt');
   for (let i = 0; i < 60 && (await ev(() => player.hp)) >= 100; i++) await wait(50);
   const d1 = await ev(() => playerPos.distanceTo(bossMan.group.position));
   log('[4] tentacle hit from', d0.toFixed(2), 'm -> pulled to', d1.toFixed(2), 'm, hp', await ev(() => player.hp));
-  await page.screenshot({ path: '../hud/equip_tent.png' });
+  await page.screenshot({ path: __dirname + '/shots/equip_tent.png' });
   log('errors', JSON.stringify(o.errors));
   await o.browser.close();
 })();
