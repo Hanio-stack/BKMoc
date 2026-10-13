@@ -561,8 +561,11 @@ const CONFIG = {
   bossHpMul: 3,                  // 通常の敵の何倍のHPか（パンチ15発ぶん。腕2本では足りない＝奪い合いが前提）
   bossStunThreshold: 125,        // スタンに必要な量（通常の敵は enemyStunThreshold=100）
   bossPoiseHits: 3,              // のけぞるのはこの回数に1回だけ。それ以外は殴られながらも動く
-                                 // （毎回のけぞると殴り続けるだけで何もさせずに倒せてしまう）
+                                 // （毎回のけぞると殴り続けるだけで何もさせずに倒せてしまう）。
+                                 // 攻撃の予備動作中はのけぞらない（止めるならキック）
   bossStunDuration: 5.0,         // 通常スタンの長さ(s)。腕を1〜2本斬れる猶予
+  bossStunHitWake: 0.8,          // スタン中に殴られるたびに、このぶん早く目を覚ます(s)。
+                                 // スタンは「腕を奪う時間」。殴り放題の時間にはしない
   bossKickChance: 0.38,          // プレイヤーがパンチを出したときキックで潰してくる確率
   bossKickCooldown: 2.6,         // 次にキックで潰してくるまでの最短(s)
   bossKickStartup: 0.30,         // 足を上げてから当たるまで。
@@ -2529,6 +2532,8 @@ function applyDamage(en, dmg) {
   if (en.boss && en.state === E.BOSS_EAT && dmg > 0) {
     bossLine('eatHit', 'ダクトの男：食事中だぞ！', 1.4, CONFIG.bossEatHitLineCd, true);
   }
+  // 通常スタン中のダクトの男は、殴られるほど早く目を覚ます
+  if (en.boss && en.state === E.STUNNED && dmg > 0) en.t += CONFIG.bossStunHitWake;
   en.hp -= dmg;
   en.hitFlash = 0.12;
   if (en.hp <= 0) {
@@ -2577,6 +2582,7 @@ function enterHitReact(en, scale, force) {
       en.state === E.HIDDEN) return;
   // ダクトの男は数発に1回しかのけぞらない（キックなど force は必ず通る）
   if (en.boss && !force) {
+    if (en.state === E.WINDUP || en.state === E.ACTIVE) return;   // 振りかぶったら止まらない
     en.poise = (en.poise || 0) + 1;
     if (en.poise < CONFIG.bossPoiseHits) return;
     en.poise = 0;
@@ -3509,8 +3515,9 @@ function cutPart(entry, side) {
     // 腕の切断ではHPを削らない（risingCutDamage:0）。
     // ライジングは「腕を奪う手段」に寄せてあり、倒すのは人間モードの仕事。
     if (CONFIG.risingCutDamage > 0) applyDamage(en, CONFIG.risingCutDamage);
-    // 切断でスタン時間を仕切り直し、連続で切る猟予を作る
-    if (en.state === E.STUNNED) en.t = 0;
+    // 切断でスタン時間を仕切り直し、連続で切る猟予を作る。
+    // ダクトの男は半分まで（2本斬って計15秒止まり続けるのを防ぐ）
+    if (en.state === E.STUNNED) en.t = en.boss ? Math.min(en.t, stunDuration(en) * 0.5) : 0;
     // 浮かせずにそのまま自分の体へ。拾う手間と滞空の混雑をなくす。
     startArmGraft(pivot, side || entry.key, wp, carried);
     if (en.boss) {
