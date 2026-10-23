@@ -71,7 +71,8 @@ async function setup(opts) {
   };
   // □（要素）が画面中央に来て選ばれるまで視点を合わせる
   o.aimAtEl = async (sel) => {
-    for (let i = 0; i < 30; i++) {
+    // 遅いマシンでは□の位置が数フレーム遅れて更新されるので、毎回2フレーム描かせてから見直す
+    for (let i = 0; i < 70; i++) {
       const r = await o.ev((sel) => {
         const el = document.querySelector(sel);
         if (!el || el.classList.contains('hidden')) return null;
@@ -81,7 +82,7 @@ async function setup(opts) {
       const dx = r.x - 640, dy = r.y - 360;
       if (Math.hypot(dx, dy) < 12 && r.sel) return true;
       await o.ev(([dx, dy]) => { yaw -= dx * 0.0016; pitch -= dy * 0.0016; }, [dx, dy]);
-      await o.wait(90);
+      await o.ev(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     }
     return false;
   };
@@ -105,6 +106,37 @@ async function setup(opts) {
     const t = targetEntries.find((t) => t.enemy === bossMan && t.key === key);
     t.el.id = id;
   }, [key, id]);
+  // ギミック検証室に入る（Tを押す）。敵はしばらく攻撃しない
+  o.lab = async () => {
+    await page.keyboard.press('KeyT'); await o.wait(400);
+    await o.ev(() => { for (const e of LAB.enemies) e.cooldown = 99; });
+  };
+  // クロスヘアをワールドの点に向ける（目の高さから）
+  o.lookAt = (p) => o.ev((p) => {
+    const dx = p.x - playerPos.x, dy = p.y - (playerPos.y + EYE), dz = p.z - playerPos.z;
+    yaw = Math.atan2(-dx, -dz);
+    pitch = Math.atan2(dy, Math.hypot(dx, dz));
+  }, p);
+  // 敵の弱点の印のワールド座標
+  o.weakPos = (i) => o.ev((i) => {
+    const en = LAB.enemies[i];
+    const v = new THREE.Vector3();
+    weakWorld(en, v);
+    return { x: v.x, y: v.y, z: v.z };
+  }, i);
+  // 次の行動が出せるまで待つ（攻撃の途中・ヒットストップ・手首アイテムのクールダウン）
+  o.ready = () => o.waitFor(() => canCancelNow() && hitstop <= 0 &&
+    wristCool.LEFT <= 0 && wristCool.RIGHT <= 0 && !player.attack, 4000);
+  // Qを押してライジングに入り切るまで待つ
+  o.rise = async () => {
+    await page.keyboard.down('KeyQ');
+    await o.waitFor(() => state === S.RISING, 4000);
+    await o.wait(250);
+  };
+  // クリック（短押し）
+  o.click = async (btn) => { await page.mouse.down({ button: btn }); await o.wait(40); await page.mouse.up({ button: btn }); };
+  // 長押し
+  o.hold = async (btn, ms) => { await page.mouse.down({ button: btn }); await o.wait(ms); await page.mouse.up({ button: btn }); };
   return o;
 }
 module.exports = { setup };

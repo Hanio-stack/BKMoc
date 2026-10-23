@@ -1,6 +1,6 @@
 // 全テストを順に実行する。各テストは期待と違う結果が1件でもあれば終了コード1で終わる
 const { spawnSync } = require('child_process');
-const tests = ['t_down', 't_eat', 't_rise', 't_equip', 't_reset', 't_reg', 't_asura'];
+const tests = ['t_logic', 't_wrist', 't_bomb', 't_core', 't_down', 't_eat', 't_rise', 't_equip', 't_reset', 't_reg', 't_asura'];
 const failed = [];
 for (const t of tests) {
   console.log('=== ' + t);

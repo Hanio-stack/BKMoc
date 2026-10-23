@@ -27,6 +27,7 @@
        死体を乗っ取るとその体の数になる（満タンで始まる）。最初の体だけ3つ。
        自分が捨てた体は数も残りもそのまま残る。死体側には数を出さない（乗り移るまで分からない）
      F                落ちている/浮いている腕と交換
+     T                ギミック検証室（スキャナ・弱点・爆弾腕を試す部屋。押すたびに作り直す）
      G                リセット
      Tab              今の目的を左上に表示／もう一度押すと消える
                       （上中央のコンパスは常に出ていて、赤い丸がゴールの方角）
@@ -127,6 +128,32 @@
                        追加の腕は生えたときの腕の種類をコピーし、以後ライジングで腕を
                        交換しても変わらない。耐久は腕ごとに減るが、HUDには出さない。
        回復（HEAL）    緑のエフェクトとともに体と腕のHPを全回復する（失った腕は戻らない）。
+
+   手首アイテム（WRIST ITEMS）:
+     パージして手首から先が無くなった腕で、台座に置いてあるアイテムを殴ると手首に付く。
+     付けられるのは「パージ済み・壊れていない・まだ何も付いていない」腕だけ。左右どちらでも可。
+     付けたあと、その側のクリックはアイテムの攻撃になる（パンチは出ない）。
+     アイテム自体のHPや回数は無い。腕と一体で、腕HPが0になると一緒に壊れる。
+     装着で腕HPは変わらない（回復しない）。交換・死体化・乗っ取りでも腕と一緒に持ち回る。
+     アイテムは WRIST_ITEMS に1件ずつ定義する（新しいアイテムはそこに足すだけ）。
+       スキャナ  クリック1回で前方へ波紋を出し、触れた敵ぜんぶに弱点（赤い印）を付ける。
+                 ダメージ0。長押しの特殊攻撃・連射・再パージは無い（再パージ不可）。
+                 波紋が敵に触れたら、その1回のスキャンにつき腕HPが1回分減る（空振りは減らない）。
+     弱点: 印は敵が死ぬまで消えない。再スキャンしても増えず、場所も変わらない。
+           印そのものに攻撃が当たったときだけ効く（クロスヘアの線で見る）。
+           雑魚は即スタン、強敵・ボスはスタン値が weakStunMul（2）倍。
+           拳・パージした手首・銃弾・触手（薙ぎ払い／刺突）・阿修羅の追加の腕で狙える。
+
+   爆弾腕（BOMB）:
+     腕の種類とは別に前腕に付く爆弾。安全ピンは胸の乳首リングとチェーンでつながっている。
+     腕が胴体から離れるとチェーンが張ってピンが抜け、bombFuse 秒（ワールド時間）で爆発する。
+       抜ける  : ライジングで爆弾腕を斬って奪う（自分に付いてから爆発する）／
+                 付けている爆弾腕を別の腕と交換する（弾き飛ばした腕が落ちた先で爆発する）／
+                 ダクトの男に奪われる
+       抜けない: 倒した敵の死体を乗っ取る（体と腕がつながったまま）／爆弾腕のまま頭モードへ／
+                 手首をパージする
+     腕HPが0になったときは爆弾も壊れて消える（爆発しない）。
+     爆風は半径 bombRadius の自分と敵に当たる。離れていれば無傷。死体の爆発とは別の仕組み。
 
    部屋（ROOMS）:
      敵は自分の部屋にプレイヤーがいる間だけ追う。出れば追うのをやめて
@@ -633,6 +660,46 @@ const CONFIG = {
   asuraHitstop: 0.035,         // 追加の腕のヒットストップ。本体(0.07)の半分＝連打のテンポを殺さない
   healFxTime: 1.3,             // 回復エフェクトの長さ(s)
 
+  /* --- 手首アイテム（パージした手首に付ける。WRIST_ITEMS 参照）--- */
+  wristPickupRespawn: 6.0,     // 取ったアイテムが台座に戻るまで(s・ワールド時間)。null で戻らない
+  wristPickupReach: 0.6,       // パンチの射程(punchRange)にこれだけ足した距離まで台座のアイテムに届く(m)
+  wristPickupAngle: 45,        // 正面からこの角度(deg)以内なら当たる
+
+  /* --- スキャナ（手首アイテム）---
+     クリック1回で前方へ波紋を出す。ダメージは0。長押しの特殊攻撃はない           */
+  scanStartup: 0.10,           // 構えてから波紋が出るまで(s)
+  scanActive: 0.12,            // 突き出し（ここからキャンセルできる）
+  scanRecover: 0.30,           // 戻り
+  scanCooldown: 0.90,          // 次のスキャンまで(s)。連打しても波紋は重ならない
+  scanRange: 13.0,             // 波紋が届く距離(m)
+  scanAngle: 38,               // 波紋の広がり（正面から左右へ, deg）
+  scanSpeed: 24.0,             // 波紋が広がる速さ(m/s)
+  scanBodyPad: 0.5,            // 体の太さぶんの余裕(m)
+  scanHitCost: 20,             // 波紋が敵に触れたときに減る腕HP（1回のスキャンにつき1回だけ）
+
+  /* --- 弱点（スキャンで付く赤い印）--- */
+  weakHitRadius: 0.36,         // 攻撃の通り道が印からこの距離以内なら弱点に当たった(m)
+  weakSweepHeight: 0.50,       // 触手の薙ぎ払いの刃の高さと印の高さの許容差(m)
+  weakStunMul: 2.0,            // 強敵・ボスの弱点に当てたときのスタン値の倍率（雑魚は即スタン）
+  weakMarkerSize: 0.36,        // 印の大きさ(m)
+
+  /* --- 強敵（ギミック検証室）--- */
+  strongHp: 260,
+  strongStunThreshold: 220,
+
+  /* --- 爆弾腕 ---
+     腕が胴体から離れると安全ピンが抜け、bombFuse 秒で爆発する。
+     bombFuse は斬った腕が体につくまで(armGraftTime 0.42s)より必ず長くする
+     （付く前に爆発すると「奪った腕が爆発する」が見えない）                     */
+  bombFuse: 1.6,               // ピンが抜けてから爆発まで(s・ワールド時間。ライジング中は伸びる)
+  bombRadius: 3.4,             // 爆発の半径(m・水平距離)
+  bombDamagePlayer: 30,
+  bombDamageEnemy: 45,
+  bombStunEnemy: 60,
+  bombChainSnapTime: 0.28,     // チェーンが張ってからピンが抜けるまで(s・実時間)。秒読みはピンが抜けてから
+  bombChainLinks: 16,          // チェーンの輪の数
+  bombChainSlack: 1.0,         // この長さより近いとチェーンがたるむ(m)
+
   /* --- 演出 --- */
   hitstopNormal: 0.07,
   hitstopTrade: 0.13,
@@ -674,7 +741,10 @@ const E = {
 };
 
 // スタンの閾値と長さ。ダクトの男だけ通常の敵より少し硬い
-function stunMax(en) { return en.boss ? CONFIG.bossStunThreshold : CONFIG.enemyStunThreshold; }
+function stunMax(en) {
+  if (en.boss) return CONFIG.bossStunThreshold;
+  return en.strong ? CONFIG.strongStunThreshold : CONFIG.enemyStunThreshold;
+}
 function stunDuration(en) { return en.boss ? CONFIG.bossStunDuration : CONFIG.enemyStunDuration; }
 
 const EYE = 1.7;
@@ -764,11 +834,28 @@ const COLOR_TENTACLE_TIP = 0xc2707a; // 触手の先端。根元より明るく�
 const ARM = { FIST: 'fist', GUN: 'gun', TENTACLE: 'tentacle' };
 // kind: 拳か銃か / hp: 耐久 / purged: 手首を撃った / swapped: 敵から奪った腕 /
 // lost: 耐久0で消えた（または最初から無い）。lost の腕は何もできない
+// wrist: 手首に付けたアイテム { id } または null（パージ済みの腕だけが付けられる。WRIST_ITEMS 参照）
+// bomb : 前腕に付いた爆弾 { armed, fuse } または null。腕の種類（kind）とは独立していて、
+//        拳＋爆弾・銃＋爆弾・触手＋爆弾のどれもあり得る。armed=安全ピンが抜けた（fuse 秒で爆発）
 function makeArmState(kind, opts) {
   return Object.assign({ kind: kind || ARM.FIST, hp: CONFIG.armMaxHp,
-                         purged: false, swapped: false, lost: false }, opts || {});
+                         purged: false, swapped: false, lost: false,
+                         wrist: null, bomb: null }, opts || {});
 }
-function cloneArmState(a) { return Object.assign({}, a); }
+// 腕の状態は数字と文字と入れ子の素のオブジェクトだけでできている。
+// wrist / bomb のような入れ子を浅いコピーで持ち回ると、交換・死体化・乗っ取りのたびに
+// 同じオブジェクトを2か所が共有して、片方の爆弾の秒読みがもう片方にも効いてしまう。
+// なので入れ子までまるごと複製する
+function clonePlain(v) {
+  if (Array.isArray(v)) return v.map(clonePlain);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = clonePlain(v[k]);
+    return o;
+  }
+  return v;
+}
+function cloneArmState(a) { return clonePlain(a); }
 
 /* ---------- 体スキル ----------
    体ごとに1回だけ使えるスキル。kind: 種類 / used: 使用済み。
@@ -830,6 +917,12 @@ function makePlayerArm(x) {
 }
 const playerArmL = makePlayerArm(-0.45);
 const playerArmR = makePlayerArm(0.45);
+// 三人称の体の腕に付ける付属物（爆弾・手首アイテム）の入れ物。
+// 腕のメッシュはパージで縦に縮むので、子にすると付属物まで潰れる
+const bodyArmHolder = { LEFT: new THREE.Group(), RIGHT: new THREE.Group() };
+bodyArmHolder.LEFT.position.set(-0.45, 1.18, 0);
+bodyArmHolder.RIGHT.position.set(0.45, 1.18, 0);
+playerGroup.add(bodyArmHolder.LEFT, bodyArmHolder.RIGHT);
 scene.add(playerGroup);
 
 // 一人称の手
@@ -1147,6 +1240,8 @@ function createCorpse(x, z, rotY, opts) {
     arm.position.y = -0.41;
     if (a.purged) { arm.scale.y = 0.65; arm.position.y = -0.27; }
     pivot.add(arm);
+    // 爆弾と手首アイテム。死体の腕もつながったまま（乗っ取るとそのまま自分の腕になる）
+    if (a.bomb || a.wrist) syncArmAddons(pivot, a, a.purged ? 'corpsePurged' : 'corpse', sx);
     if (isGun) {
       const barrel = new THREE.Mesh(
         new THREE.CylinderGeometry(0.045, 0.055, 0.36, 8),
@@ -1160,6 +1255,16 @@ function createCorpse(x, z, rotY, opts) {
   const legs = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.28, 0.98), mat);
   legs.position.set(0, 0.16, 0.54);
   group.add(legs);
+
+  // 爆弾腕の胸のリングとチェーン（ピンが刺さっている腕だけ）
+  let bombRig = null;
+  for (const key of ['LEFT', 'RIGHT']) {
+    const a = arms[key];
+    if (!a || a.lost || !a.bomb || a.bomb.armed || !armPivots[key]) continue;
+    bombRig = bombRig || { LEFT: null, RIGHT: null };
+    const sx = (key === 'LEFT') ? 1 : -1;
+    bombRig[key] = { ring: makeNippleRing(torso, sx * 0.22, 0.20, 0.222), chain: makeChain() };
+  }
 
   scene.add(group);
 
@@ -1199,6 +1304,7 @@ function createCorpse(x, z, rotY, opts) {
     resource: (typeof opts.resource === 'number') ? Math.min(resMax, opts.resource) : resMax,
     extraArms: opts.extraArms || null,
     blinkPhase: 0,
+    bombRig,
   };
   corpses.push(c);
   return c;
@@ -1212,6 +1318,8 @@ function armsFromEnemy(en) {
     const carried = en.parts[key].userData.armState;   // ダクトの男が奪って付けていた腕
     out[key] = !attached ? null
       : (carried ? cloneArmState(carried) : makeArmState(en.parts[key].userData.kind, { swapped: true }));
+    // 爆弾付きの腕は体とつながったまま（ピンは抜けない）
+    if (out[key] && en.parts[key].userData.bomb && !out[key].bomb) out[key].bomb = { armed: false };
   }
   return out;
 }
@@ -1393,6 +1501,7 @@ function clearDebris() {
 
 function removeCorpse(c) {
   scene.remove(c.group);
+  removeCorpseBombRig(c);    // 爆弾は死体と一緒に消える（死体の爆発とは別に爆発しない）
   c.el.remove();
   for (const key of ['LEFT', 'RIGHT']) if (c.armEls[key]) c.armEls[key].remove();
   const i = corpses.indexOf(c);
@@ -1461,6 +1570,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyG') { resetAll(); return; }
   if (e.code === 'KeyB') { warpToBoss(); return; }
   if (e.code === 'KeyV') { startDemo(); return; }
+  if (e.code === 'KeyT') { startLab(); return; }      // ギミック検証室（入るたびに作り直す）
   // 腕の付け替え（プロトタイプ検証用）。1=拳 / 2=銃 / 3=触手
   if (e.code === 'Digit1') { equipArms(ARM.FIST); return; }
   if (e.code === 'Digit2') { equipArms(ARM.GUN); return; }
@@ -1551,6 +1661,14 @@ document.addEventListener('mousedown', (e) => {
     if (canCancelNow() && asuraTrigger(side)) return;
     showFeedback('NO ARM', '#8b8f88', 22); return;
   }
+  if (arm.wrist) {
+    // 手首アイテム：クリック1回で1回だけ攻撃する。パンチ・パージ・連射はない。
+    // 再パージできるアイテムだけ長押しを見る（短押しなら攻撃）
+    const def = wristDefOf(arm);
+    if (def && def.repurge) mouseHold[side] = { t: 0, purged: false, wrist: true };
+    else useWrist(side);
+    return;
+  }
   if (arm.kind === ARM.GUN) {
     // 銃腕：押した瞬間に1発、押している間は連射（パージ・パンチはない）
     gunHold[side] = true;
@@ -1571,7 +1689,9 @@ document.addEventListener('mouseup', (e) => {
   const h = mouseHold[side];
   mouseHold[side] = null;
   if (!h) return;
-  if (!h.purged && state === S.HUMAN) doPunch(side);
+  if (!h.purged && state === S.HUMAN) {
+    if (h.wrist) useWrist(side); else doPunch(side);
+  }
 });
 
 document.addEventListener('mousemove', (e) => {
@@ -1594,6 +1714,7 @@ const LOCK_KEYS = [
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
 ];
 startOverlay.addEventListener('click', () => {
+  audioUnlock();      // 効果音（ブラウザはユーザー操作のあとでないと音を出せない）
   const root = document.documentElement;
   if (!document.fullscreenElement && root.requestFullscreen) {
     root.requestFullscreen().then(() => {
@@ -1664,6 +1785,10 @@ const HUD_ICON = {
             '<path d="M29 33c5-6-3-10 3-18"/>' +
             '<circle cx="18" cy="13" r="1.8" class="f"/><circle cx="25" cy="11" r="1.8" class="f"/>' +
             '<circle cx="32" cy="15" r="1.8" class="f"/>',
+  // スキャナ：メガホンと小さなモニタ（手首に付けたアイテム）
+  scanner: '<path d="M10 30l9-3v-6l-9-3z"/><path d="M19 21l15-9v24l-15-9"/>' +
+           '<path d="M38 18q4 6 0 12M42 14q6 10 0 20" opacity="0.8"/>' +
+           '<rect x="12" y="35" width="13" height="8" rx="1.5"/><path d="M14 39h9" class="f" stroke-width="1.5"/>',
   // 失った腕：破線の腕に×
   lost: '<path d="M18 12v26M30 12v26" stroke-dasharray="3 4" opacity="0.5"/>' +
         '<path d="M15 17l18 18M33 17L15 35"/>',
@@ -1730,8 +1855,13 @@ function updatePlayerHud() {
     const isGun = st.kind === ARM.GUN;
     const isTent = st.kind === ARM.TENTACLE;
     c.fill.style.setProperty('--hp', (st.lost ? 0 : st.hp / CONFIG.armMaxHp * 100) + '%');
-    setHudIcon(c, st.lost ? 'lost' : isGun ? 'gun' : isTent ? 'tentacle'
+    const wdef = wristDefOf(st);
+    setHudIcon(c, st.lost ? 'lost' : wdef ? wdef.icon : isGun ? 'gun' : isTent ? 'tentacle'
                                     : (st.purged ? 'purged' : 'fist'));
+    c.el.classList.toggle('wrist', !!wdef);
+    // 爆弾は丸の上のランプ。ピンが抜けたら点滅する
+    c.el.classList.toggle('bomb', !st.lost && !!st.bomb);
+    c.el.classList.toggle('armed', !st.lost && !!st.bomb && !!st.bomb.armed);
     c.el.classList.toggle('lost', st.lost);
     c.el.classList.toggle('purged', st.purged && !st.lost);
     c.el.classList.toggle('swapped', st.swapped && !isGun && !isTent && !st.lost);
@@ -1847,6 +1977,7 @@ function cancelPointOf(atk) {
     return atk.startup + (atk.tent ? CONFIG.tentSweepCancel : CONFIG.punchActive);
   }
   if (atk.type === 'kick') return atk.startup + CONFIG.kickActive;
+  if (atk.type === 'wrist') return atk.startup + WRIST_ITEMS[atk.item].attack.active;
   return Infinity;   // finisher は最後までキャンセル不可
 }
 function canCancelNow() {
@@ -1906,7 +2037,7 @@ function updatePunchBuffer(dt) {
     ? CONFIG.tentSweepBuffer : CONFIG.inputBufferTime;
   if (b.t > limit || state !== S.HUMAN) { punchBuffer = null; return; }
   const arm = player.arms[b.side];
-  if (arm.lost || arm.kind === ARM.GUN) { punchBuffer = null; return; }  // 待つ間に腕が変わった
+  if (arm.lost || arm.kind === ARM.GUN || arm.wrist) { punchBuffer = null; return; }  // 待つ間に腕が変わった
   if (!canCancelNow()) return;
   punchBuffer = null;
   startPunch(b.side);
@@ -1972,12 +2103,25 @@ function damageArm(side, amount) {
 
 function loseArm(side) {
   const arm = player.arms[side];
-  arm.lost = true; arm.hp = 0;
-  gunHold[side] = false;
   // 肉片は一人称の手の位置から散る
   const hand = fpHands[side];
   const at = new THREE.Vector3();
   hand.userData.fist.getWorldPosition(at);
+  // 手首アイテムと爆弾は腕と一体。HP0 では一緒に壊れて消える。
+  // 爆弾はピンが抜けていても爆発しない（腕の分離＝ピン抜けとは別の出来事）
+  const wdef = wristDefOf(arm);
+  if (wdef) wdef.fx.break(at);
+  if (arm.bomb) {
+    const bAt = new THREE.Vector3();
+    playerArmWorld(side, bAt);
+    spawnFleshBurst(bAt, 4, 2.0, null, 0.8);
+  }
+  arm.wrist = null;
+  arm.bomb = null;
+  arm.lost = true; arm.hp = 0;
+  gunHold[side] = false;
+  mouseHold[side] = null;
+  if (player.attack && player.attack.type === 'wrist' && player.attack.side === side) player.attack = null;
   const fwd = new THREE.Vector3(-Math.sin(yaw), 0.2, -Math.cos(yaw)).normalize();
   spawnFleshBurst(at, CONFIG.armLostPieces, 3.2, fwd);
   addShake(0.35);
@@ -2095,6 +2239,10 @@ function tryShoot(side) {
   const offset = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw))
     .multiplyScalar(side === 'LEFT' ? -0.28 : 0.28);
   spawnBullet(eye.add(offset).addScaledVector(fwd, 0.7), fwd, side);
+  // 弱点はクロスヘアで狙うので、判定は撃った瞬間のクロスヘアの線で見る
+  // （弾は手元から出るぶん横にずれて飛ぶので、弾の通り道だと印の横をかすめる）
+  aimRay(projectiles[projectiles.length - 1].aimO = new THREE.Vector3(),
+         projectiles[projectiles.length - 1].aimD = new THREE.Vector3());
   player.gunRecoil[side] = 1;
   addShake(0.06);
   damageArm(side, CONFIG.gunShotCost);
@@ -2161,10 +2309,13 @@ function resolveBullet(p, en) {
   // 動けない的を撃っているぶんダメージを上げて、組み合わせた見返りをはっきりさせる
   const pinned = isPinnedByTentacle(en);
   const dmg = CONFIG.gunDamage * (pinned ? CONFIG.gunTetherDamageMul : 1);
+  // 弱点：弾がこのフレームで通った線分（少し先まで）が印を通ったか
+  const weak = projWeakHit(p, en);
   applyDamage(en, dmg);
   // 拘束中は姿勢を奪えない（崩すと拘束が壊れる）が、スタンは溜まる。
   // 溜め切ってから離すと、その場で崩れて掴みに繋がる（releaseTentacle）
-  applyStun(en, CONFIG.gunStun);
+  if (weak && en.state !== E.DEAD) { weakStrike(en, CONFIG.gunStun); weakFeedback(); }
+  else applyStun(en, CONFIG.gunStun);
   // 当たった点で必ず肉片を飛ばす。血が出ないと「通っていない」と読まれる
   spawnFleshBurst(p.obj.position, pinned ? 4 : 2, 2.2, null, 0.4);
   // 1発ごとにのけぞらせると射撃だけで完封できるので、のけぞりは無し。回避判定だけ通す
@@ -2173,7 +2324,7 @@ function resolveBullet(p, en) {
     addShake(0.18);
     doFlash(0.16, '#ffc2cf');
     showFeedback('PINNED SHOT  -' + Math.round(dmg), '#ff9bb0', 30);
-  } else {
+  } else if (!weak) {
     addHitstop(0.02);
     showFeedback('SHOT  -' + Math.round(dmg), '#ffe9a0', 22);
   }
@@ -2183,7 +2334,7 @@ function resolveBullet(p, en) {
 
 function doPunch(side) {
   const arm = player.arms[side];
-  if (arm.lost || arm.kind === ARM.GUN) return;   // 殴れない腕は先行入力もしない
+  if (arm.lost || arm.kind === ARM.GUN || arm.wrist) return;   // 殴れない腕は先行入力もしない
   // まだキャンセルできない＝振り抜き前。捨てずに覚えておく（最後に押した側が勝つ）
   if (!canCancelNow()) { punchBuffer = { side, t: 0 }; return; }
   startPunch(side);
@@ -2196,6 +2347,7 @@ function doPurge(side) {
   if (!canCancelNow()) return false;
   const arm = player.arms[side];
   if (arm.purged || arm.lost || arm.kind === ARM.GUN) return false;  // 銃腕は撃てない
+  if (arm.wrist) return false;          // 手首アイテムの付いた腕（パージ済みなので本来ここへは来ない）
   cancelCurrentAction();
   player.arms[side].purged = true;
 
@@ -2210,6 +2362,8 @@ function doPurge(side) {
   mesh.position.copy(eye).add(offset);
   scene.add(mesh);
   projectiles.push({ obj: mesh, side, vel: fwd.clone().multiplyScalar(CONFIG.purgeSpeed), travelled: 0, dead: false });
+  aimRay(projectiles[projectiles.length - 1].aimO = new THREE.Vector3(),
+         projectiles[projectiles.length - 1].aimD = new THREE.Vector3());
   player.recoverT = CONFIG.punchRecover;
   updateArmVisuals();
   showFeedback('PURGE ' + side[0], '#a8d8ff', 26);
@@ -2285,6 +2439,11 @@ function isJustTiming(en) {
 }
 
 function resolveAttack(atk) {
+  if (atk.type === 'wrist') {
+    const def = WRIST_ITEMS[atk.item];
+    if (def) def.onAttack(atk);
+    return;
+  }
   if (atk.type === 'kick') {
     const en = findTargetEnemy(CONFIG.kickRange, CONFIG.kickAngle);
     if (!en) { showFeedback('WHIFF', '#6e7268', 22); return; }
@@ -2296,6 +2455,9 @@ function resolveAttack(atk) {
   // （判定は updateTentacleSweep）
   if (atk.tent) return;
   const en = findTargetEnemy(CONFIG.punchRange, CONFIG.punchAngle);
+  // 置いてある手首アイテムを殴った（敵より手前にあるときだけ）
+  const pk = findWristPickupHit(en);
+  if (pk) { hitWristPickup(pk, atk.side); return; }
   if (!en) return;
   if (en.state === E.DODGE) { showFeedback('MISS', '#6e7268', 22); return; }
   resolvePunch(en, atk.side);
@@ -2314,6 +2476,8 @@ function resolvePunch(en, side) {
   const dmg = purged ? CONFIG.purgedArmDamage : CONFIG.attackDamage;
   const stun = purged ? CONFIG.purgedArmStun : CONFIG.attackStun;
   const attacking = (en.state === E.WINDUP || en.state === E.ACTIVE);
+  // 弱点に拳が届いたか（クロスヘアの通り道で見る。敵に当たっただけでは弱点にならない）
+  const weak = weakHitByAim(en, CONFIG.punchRange + 0.8);
 
   // --- 掴みフィニッシャーへの分岐（パンチの延長。専用入力もUIもない）---
   // 拳のある腕で「スタン中の敵」を殴ったらダメージを入れる代わりに頭を掴んで潰す。
@@ -2330,7 +2494,7 @@ function resolvePunch(en, side) {
   }
 
   applyDamage(en, dmg);
-  applyStun(en, stun);
+  if (weak && en.state !== E.DEAD) weakStrike(en, stun); else applyStun(en, stun);
 
   if (attacking) {
     addHitstop(CONFIG.hitstopTrade);
@@ -2353,6 +2517,7 @@ function resolvePunch(en, side) {
     addShake(CONFIG.shakeNormal);
     showFeedback('HIT', '#e8e4da', 26);
   }
+  if (weak && en.state !== E.DEAD) weakFeedback();
   // ヒットした近接だけ腕が削れる（空振りは減らない）。
   // 消えたときの表示がHITに上書きされないよう最後に呼ぶ
   damageArm(side, CONFIG.armHitCost);
@@ -2654,6 +2819,7 @@ function killEnemy(en) {
   setEnemyState(en, E.DEAD);
   en.fallT = 0;
   en.glow.material.opacity = 0;
+  clearWeak(en);             // 弱点の印は死ぬまで（死体には残さない）
 
   // 頭が破裂し、残った体はその場に「死体」として置き換わる。
   // これで倒した敵の体を奪える。
@@ -3389,6 +3555,7 @@ function startArmGraft(obj, key, from, armState) {
     armState: armState || null,      // 指定があればその状態で付く（死体の腕）
     pull: from.clone().add(back), landed: false,
   });
+  if (armState) setAddonState(obj, armState);   // ランプの点滅はこの腕の秒読みを見る
 }
 
 // 外れた古い腕を弾き飛ばす。
@@ -3415,6 +3582,11 @@ function ejectOldArm(key) {
     m.add(barrel);
   }
   scene.add(m);
+  // 爆弾と手首アイテムも腕と一緒に飛ぶ
+  const ast = cloneArmState(st);       // HPも銃/拳も消耗したまま持ち越す
+  syncArmAddons(m, ast, 'loose', key === 'LEFT' ? -1 : 1);
+  // 爆弾付きの腕：胴体から外れたのでチェーンが張って安全ピンが抜ける（落ちた先で爆発する）
+  if (ast.bomb && !ast.bomb.armed) pullBombPin(ast, m, playerChestWorld(key, new THREE.Vector3()));
   // 真横に飛ばすと視界（水平FOV約114°）の外へ落ちて、拾える猶予があっても気づけない。
   // 前方成分を混ぜて、目の前の床に転がるようにする
   const sx = (key === 'LEFT') ? -1 : 1;
@@ -3428,7 +3600,7 @@ function ejectOldArm(key) {
   document.body.appendChild(el);
   severedParts.push({
     obj: m, key, el, phase: 'eject',
-    armState: cloneArmState(st),       // HPも銃/拳も消耗したまま持ち越す
+    armState: ast,
     vel: dir.multiplyScalar(CONFIG.armEjectSpeed),
     spin: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12,
                             (Math.random() - 0.5) * 12),
@@ -3492,7 +3664,14 @@ function cutPart(entry, side) {
     return;
   }
   // 男が付けていた奪った腕は、奪われたときの耐久のまま戻る（全快しない・種類も変わらない）
-  const carried = (en.boss && pivot.userData.armState) ? cloneArmState(pivot.userData.armState) : null;
+  let carried = (en.boss && pivot.userData.armState) ? cloneArmState(pivot.userData.armState) : null;
+  // 爆弾付きの腕：胴体から離れるのでチェーンが張って安全ピンが抜ける
+  let ringAt = null;
+  if (entry.key !== 'HEAD' && pivot.userData.bomb) {
+    if (!carried) carried = makeArmState(pivot.userData.kind || ARM.FIST, { swapped: true });
+    carried.bomb = carried.bomb || { armed: false };
+    ringAt = enemyRingWorld(en, entry.key, new THREE.Vector3());
+  }
 
   pivot.updateWorldMatrix(true, false);
   const wp = new THREE.Vector3(), wq = new THREE.Quaternion();
@@ -3535,16 +3714,8 @@ function cutPart(entry, side) {
     if (en.state === E.STUNNED) en.t = en.boss ? Math.min(en.t, stunDuration(en) * 0.5) : 0;
     // 浮かせずにそのまま自分の体へ。拾う手間と滞空の混雑をなくす。
     startArmGraft(pivot, side || entry.key, wp, carried);
-    if (en.boss) {
-      // 斬られた腕のぶん、一撃の上乗せも減る
-      let stolen = 0;
-      for (const k of ['LEFT', 'RIGHT']) {
-        const p = en.parts[k];
-        if (p.parent === en.pivotRoot && p.userData.armState) stolen++;
-      }
-      en.stolen = stolen;
-      en.bonusDamage = stolen * CONFIG.bossStolenArmDamage;
-    }
+    if (ringAt) pullBombPin(carried, pivot, ringAt);
+    if (en.boss) bossRecountArms(en);   // 斬られた腕のぶん、一撃の上乗せも減る
     addHitstop(0.10);
     addShake(0.20);
     doFlash(0.20, '#ffd0b0');
@@ -3569,10 +3740,13 @@ function cutCorpseArm(t, side) {
   selectedTarget = null;
 
   const armState = cloneArmState(c.arms[key]);   // 敵の死体なら既にフルHP。自分の捨てた体なら消耗したまま
+  // 爆弾付きの腕：死体の胸のリングから離れるので安全ピンが抜ける
+  const ringAt = (c.bombRig && c.bombRig[key]) ? c.bombRig[key].ring.getWorldPosition(new THREE.Vector3()) : null;
   c.arms[key] = null;
   c.armPivots[key] = null;
   if (c.armEls[key]) { c.armEls[key].remove(); c.armEls[key] = null; }
   startArmGraft(pivot, side || key, wp, armState);
+  if (armState.bomb && !armState.bomb.armed) pullBombPin(armState, pivot, ringAt || wp);
   addHitstop(0.10);
   addShake(0.20);
   doFlash(0.20, '#ffd0b0');
@@ -3638,11 +3812,17 @@ function updateArmVisuals() {
     const color = armColor(st);
     const isTent = st.kind === ARM.TENTACLE;
     applyHandLook(fpHands[side], st);
+    // 爆弾と手首アイテム（一人称の手は腕の上の面に載せる）
+    syncArmAddons(fpHands[side], st, 'fp', side === 'LEFT' ? -1 : 1);
     if (!isTent && tentHold && tentHold.side === side) detachTentacle();
     const bodyArm = side === 'LEFT' ? playerArmL : playerArmR;
     bodyArm.material.color.setHex(color);
     bodyArm.scale.y = st.purged ? 0.65 : 1;
     bodyArm.visible = !st.lost;
+    // 三人称の体の腕（ライジング中に見える）。腕のメッシュは縮むので別の入れ物に付ける
+    const holder = bodyArmHolder[side];
+    holder.visible = !st.lost;
+    syncArmAddons(holder, st, st.purged ? 'bodyPurged' : 'body', side === 'LEFT' ? -1 : 1);
   }
 }
 
@@ -3910,8 +4090,20 @@ function updateTentacle(rdt) {
       else bossFinisherHit(e);
       return;
     }
+    if (hit && weakHitByAim(hit.enemy, hit.dist + 1.2) &&
+        (WEAK_TYPES[weakTypeOf(hit.enemy)] || WEAK_TYPES.grunt).effect === 'stun') {
+      // 雑魚の弱点を突いた：刺さったまま拘束せず、その場で崩す
+      const e = hit.enemy;
+      h.phase = 'retract';
+      applyDamage(e, CONFIG.tentStabDamage);
+      if (e.state !== E.DEAD) weakStrike(e, CONFIG.tentStabStun);
+      damageArm(h.side, CONFIG.tentStabCost);
+      if (e.state !== E.DEAD) weakFeedback();
+      return;
+    }
     if (hit) {
       const e = hit.enemy;
+      const weakStab = weakHitByAim(e, hit.dist + 1.2);
       h.enemy = e;
       h.phase = 'stuck';
       h.held = 0;
@@ -3929,7 +4121,10 @@ function updateTentacle(rdt) {
       e.smashCd = 0;
       setEnemyState(e, E.TETHER);
       applyDamage(e, CONFIG.tentStabDamage);
-      e.stun = Math.min(stunMax(e) - 1, e.stun + CONFIG.tentStabStun);
+      const stabStun = CONFIG.tentStabStun * (weakStab ? CONFIG.weakStunMul : 1) *
+                       (e.boss ? CONFIG.bossStunTakenMul : 1);
+      e.stun = Math.min(stunMax(e) - 1, e.stun + stabStun);
+      if (weakStab) { weakStats.hits++; if (e.weak) e.weak.hit = 1; }
       damageArm(h.side, CONFIG.tentStabCost);
       addHitstop(CONFIG.tentStabHitstop);
       addShake(CONFIG.tentStabShake);
@@ -3998,7 +4193,7 @@ function updateTentacle(rdt) {
     pos.addScaledVector(vel, rdt);
 
     // 壁に叩きつけた
-    if (!DEMO.active && !walkableAt(pos.x, pos.z, false)) {
+    if (throwBlocked(pos.x, pos.z)) {
       pos.x = px; pos.z = pz;
       const hv = Math.hypot(vel.x, vel.z);
       if (hv >= CONFIG.tentSmashMin && e.smashCd <= 0) {
@@ -4144,7 +4339,7 @@ function updateThrownEnemy(en, rdt) {
   pos.addScaledVector(v, rdt);
 
   // 壁に叩きつけた
-  if (!DEMO.active && !walkableAt(pos.x, pos.z, false)) {
+  if (throwBlocked(pos.x, pos.z)) {
     pos.x = px; pos.z = pz;
     const hv = Math.hypot(v.x, v.z);
     if (hv > 6) {
@@ -4444,6 +4639,7 @@ function updateTentacleSweep(atk, onHit) {
     const ang = Math.atan2(dx * rgtX + dz * rgtZ, dx * fwdX + dz * fwdZ);
     if (ang < lo - pad || ang > hi + pad) continue;
     atk.hitSet.add(en);
+    atk.bandLo = lo; atk.bandHi = hi;      // 弱点の判定に使う（刃が今フレーム通った帯）
     onHit(en, atk);
     // フィニッシャーに差し替わったら、この薙ぎはもう進まない（追加の腕は player.attack を持たない）
     if (!atk.extra && player.attack !== atk) return;
@@ -4474,12 +4670,15 @@ function tentSweepHit(en, atk) {
   }
 
   const attacking = (en.state === E.WINDUP || en.state === E.ACTIVE);
+  const weak = weakHitBySweep(en, atk.bandLo, atk.bandHi);
   applyDamage(en, CONFIG.tentSweepDamage);
-  applyStun(en, CONFIG.tentSweepStun);
+  if (weak && en.state !== E.DEAD) weakStrike(en, CONFIG.tentSweepStun);
+  else applyStun(en, CONFIG.tentSweepStun);
   // のけぞりは小さめ。止めるより削る攻撃なので、相手の行動をほぼ奪わない
   if (!attacking && en.state !== E.DEAD && en.state !== E.STUNNED) enterHitReact(en, 0.6);
   damageArm(atk.side, CONFIG.tentSweepHitCost);
   atk.hits++;
+  if (weak && en.state !== E.DEAD) { weakFeedback(); return; }
   if (attacking) {
     addHitstop(CONFIG.hitstopTrade);
     addShake(CONFIG.shakeNormal * 1.6);
@@ -4870,19 +5069,21 @@ function asuraShoot(xa) {
 function asuraPunchHit(xa) {
   const en = findTargetEnemy(CONFIG.punchRange, CONFIG.punchAngle);
   if (!en) return;
-  asuraHit(en, xa, CONFIG.attackDamage, CONFIG.attackStun, CONFIG.armHitCost);
+  asuraHit(en, xa, CONFIG.attackDamage, CONFIG.attackStun, CONFIG.armHitCost,
+           weakHitByAim(en, CONFIG.punchRange + 0.8));
 }
 
 function asuraSweepHit(en, xa, atk) {
   if (en.state === E.GRABBED) return;
   atk.hits++;
-  asuraHit(en, xa, CONFIG.tentSweepDamage, CONFIG.tentSweepStun, CONFIG.tentSweepHitCost);
+  asuraHit(en, xa, CONFIG.tentSweepDamage, CONFIG.tentSweepStun, CONFIG.tentSweepHitCost,
+           weakHitBySweep(en, atk.bandLo, atk.bandHi));
 }
 
 // 追加の腕のヒット。掴み（フィニッシャー）は出さない＝それは本体の腕の仕事。
 // 回避の判定（checkEnemyEscape）にも数えない。数えると1クリックで3ヒットするので
 // 毎回すぐ避けられて「ぼこぼこにする」が成立しない
-function asuraHit(en, xa, dmg, stun, cost) {
+function asuraHit(en, xa, dmg, stun, cost, weak) {
   if (en.boss && en.state === E.HIDDEN) {
     damageAsuraArm(xa, cost);
     bossFound(true);
@@ -4894,7 +5095,7 @@ function asuraHit(en, xa, dmg, stun, cost) {
   const mul = CONFIG.asuraDamageMul;
   const attacking = (en.state === E.WINDUP || en.state === E.ACTIVE);
   applyDamage(en, dmg * mul);
-  applyStun(en, stun * mul);
+  if (weak && en.state !== E.DEAD) weakStrike(en, stun * mul); else applyStun(en, stun * mul);
   // のけぞりは延長するだけで押し出さない。本体の腕のぶんと重ねて押すと
   // 2時（10時）の腕が届く前に間合い(punchRange)の外へ逃げてしまう
   if (!attacking) {
@@ -4906,6 +5107,7 @@ function asuraHit(en, xa, dmg, stun, cost) {
   asuraCombo++;
   asuraComboT = 0.7;
   showFeedback('ASURA x' + asuraCombo, '#ffd75e', Math.min(44, 26 + asuraCombo * 2));
+  if (weak && en.state !== E.DEAD) weakFeedback();
   damageAsuraArm(xa, cost);
 }
 
@@ -5097,6 +5299,1317 @@ function clearHealFx() {
   for (const p of healFx) { scene.remove(p.obj); p.obj.material.dispose(); }
   healFx = [];
   healOverlayT = 0;
+}
+
+/* =========================================================
+   手首アイテム（WRIST ITEMS）／スキャナ／弱点／爆弾腕
+
+   手首アイテム:
+     パージして手首から先が無くなった腕で、マップに置いてあるアイテムを殴ると
+     手首に付く（Fなどの追加操作はない。左右どちらの腕でも取れる）。
+     付けられるのは「パージ済み・壊れていない・まだ何も付いていない」腕だけ。
+     付けたあとは、その側のクリックがアイテムの攻撃になる（パンチは出ない）。
+     アイテムの中身は WRIST_ITEMS に1件ずつ定義する。新しいアイテムは
+     ここに1件足すだけで、取得・装着・HUD・攻撃の流れはそのまま乗る。
+     アイテム自体のHPや使用回数は持たない。腕と一体で、腕HPが0になれば一緒に壊れる。
+     装着は腕のHPを変えない（回復もしない）。腕の状態 wrist: { id } に載るので、
+     交換・死体化・乗っ取りでも腕と一緒に持ち回られる。
+
+   スキャナ（第一弾）:
+     クリックで前方へ波紋を出す。波紋に触れた敵ぜんぶに弱点（赤い印）が付く。
+     ダメージは0。長押しの特殊攻撃も再パージもない。
+     波紋が敵に1体でも触れたら、その1回のスキャンで腕HPを1回だけ減らす
+     （空振りは減らない。すでに印の付いた敵に触れても減る＝判定は毎回ある）。
+
+   弱点:
+     印は敵ごとに決まる場所（頭・胸・腹など。WEAK_TYPES）に付き、死ぬまで消えない。
+     再スキャンしても増えないし、場所も変わらない。
+     弱点そのものに攻撃が当たったときだけ効く（敵に当たっただけでは効かない）。
+     拳・パージした手首・銃弾・触手（薙ぎ払い／刺突）・阿修羅の追加の腕が対象。
+       雑魚    : 即スタン
+       強敵・ボス: スタン値が weakStunMul 倍
+
+   爆弾腕:
+     腕の種類とは別に、前腕に付く爆弾（bomb: { armed, fuse }）。
+     爆弾の安全ピンは、胴体の乳首リングとチェーンでつながっている。
+     腕が胴体から離れるとチェーンが張ってピンが抜け、bombFuse 秒（ワールド時間）で爆発する。
+       ・ライジングで敵（や死体）の爆弾腕を斬って奪う → 自分に付いてから爆発する
+       ・装備中の爆弾腕を別の腕と交換する → 弾き飛ばした古い腕が落ちた先で爆発する
+       ・ダクトの男に爆弾腕を奪われる → 男の手元で爆発する
+     次の場合はピンが抜けない（爆発しない）:
+       ・敵を倒してその死体を乗っ取る（体と腕をまとめて取るのでつながったまま）
+       ・爆弾腕のまま頭モードへ（体と腕は一緒に残る）
+       ・手首をパージする（前腕は胴体に付いたまま）
+     腕HPが0になったときは、爆弾も腕と一緒に壊れて消える（爆発しない）。
+     秒読みは爆弾の状態（腕の状態の中）に載っているので、腕がどこへ移っても
+     （吸着中・自分の腕・床・死体・ダクトの男）止まらずに進む。
+   ========================================================= */
+
+/* ---------- 効果音（WebAudio で合成。音声ファイルは使わない）---------- */
+let audioCtx = null;
+function audioUnlock() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { audioCtx = null; }
+}
+function sfx(kind) {
+  const ac = audioCtx;
+  if (!ac || ac.state !== 'running') return;
+  const t0 = ac.currentTime;
+  const master = ac.createGain();
+  master.gain.value = 0.32;
+  master.connect(ac.destination);
+  const tone = (type, f0, f1, dur, vol, delay) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    const s = t0 + (delay || 0);
+    o.type = type;
+    o.frequency.setValueAtTime(f0, s);
+    o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), s + dur);
+    g.gain.setValueAtTime(vol, s);
+    g.gain.exponentialRampToValueAtTime(0.001, s + dur);
+    o.connect(g); g.connect(master);
+    o.start(s); o.stop(s + dur + 0.02);
+  };
+  const noise = (dur, vol, freq, freqEnd, type, delay) => {
+    const len = Math.max(1, Math.floor(ac.sampleRate * dur));
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    const s = t0 + (delay || 0);
+    src.buffer = buf;
+    f.type = type || 'lowpass';
+    f.frequency.setValueAtTime(freq, s);
+    f.frequency.exponentialRampToValueAtTime(Math.max(30, freqEnd || freq), s + dur);
+    g.gain.setValueAtTime(vol, s);
+    g.gain.exponentialRampToValueAtTime(0.001, s + dur);
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start(s); src.stop(s + dur + 0.02);
+  };
+  switch (kind) {
+    case 'clink':     // 安全ピンが抜ける金属音
+      tone('triangle', 2900, 2500, 0.16, 0.5);
+      tone('sine', 4300, 4000, 0.22, 0.3, 0.01);
+      tone('square', 1300, 900, 0.05, 0.12);
+      noise(0.05, 0.35, 6000, 3000, 'highpass');
+      break;
+    case 'beep':      // 起爆前のランプ
+      tone('square', 1700, 1700, 0.05, 0.10);
+      break;
+    case 'boom':      // 爆発
+      noise(1.1, 1.0, 1400, 80, 'lowpass');
+      tone('sine', 110, 32, 0.8, 0.9);
+      noise(0.18, 0.6, 5000, 900, 'bandpass');
+      break;
+    case 'scan':      // スキャンの波紋
+      tone('sine', 380, 1900, 0.32, 0.35);
+      tone('triangle', 760, 3800, 0.32, 0.12, 0.02);
+      break;
+    case 'lock':      // 弱点の印が付いた
+      tone('square', 980, 980, 0.05, 0.10);
+      tone('square', 1460, 1460, 0.07, 0.10, 0.06);
+      break;
+    case 'weak':      // 弱点に当たった
+      tone('sawtooth', 220, 70, 0.22, 0.4);
+      noise(0.12, 0.5, 2500, 400, 'lowpass');
+      break;
+    case 'equip':     // 手首にアイテムが付いた
+      tone('square', 160, 90, 0.10, 0.35);
+      tone('triangle', 2100, 1800, 0.12, 0.25, 0.05);
+      break;
+    case 'bonk':      // 付けられないアイテムを殴った
+      tone('triangle', 330, 200, 0.08, 0.3);
+      break;
+    case 'break':     // 手首アイテムが腕と一緒に壊れた
+      noise(0.25, 0.5, 4000, 600, 'bandpass');
+      tone('square', 600, 120, 0.2, 0.18);
+      break;
+  }
+}
+
+/* ---------- 共通：小さな部品 ---------- */
+const _gmV1 = new THREE.Vector3(), _gmV2 = new THREE.Vector3(), _gmV3 = new THREE.Vector3();
+const _gmQ = new THREE.Quaternion();
+const _gmUp = new THREE.Vector3(0, 1, 0);
+
+function inScene(o) {
+  while (o.parent) o = o.parent;
+  return o === scene;
+}
+// 点 p と線分 a→b の距離の二乗
+function pointSegDist2(p, a, b) {
+  const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+  const apx = p.x - a.x, apy = p.y - a.y, apz = p.z - a.z;
+  const ab2 = abx * abx + aby * aby + abz * abz;
+  const t = ab2 > 1e-9 ? Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / ab2)) : 0;
+  const dx = apx - abx * t, dy = apy - aby * t, dz = apz - abz * t;
+  return dx * dx + dy * dy + dz * dz;
+}
+// 狙いの向き（クロスヘア）。カメラにはヒットシェイクが乗るので、判定は yaw/pitch から作る
+function aimRay(outOrigin, outDir) {
+  outOrigin.set(playerPos.x, playerPos.y + EYE, playerPos.z);
+  outDir.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+}
+
+/* =========================================================
+   腕の付属物の見た目（爆弾・手首アイテム）
+   一人称の手・体の腕・敵の腕・死体の腕・床の腕など、腕の作り方ごとに
+   原点と向きが違うので、ARM_FRAMES で「手首がどっちで、どこに載せるか」を決め、
+   付属物は addon の座標（ローカル-Y が手首側）で1回だけ作る。
+   ========================================================= */
+// axis: 'y' はローカル-Yが手首側、'z' はローカル-Zが手首側（一人称の手）
+// wrist: 原点から手首まで / mid: 爆弾の中心まで / outX: 外側へずらす量（y の腕）
+const ARM_FRAMES = {
+  fp:          { axis: 'z', wrist: 0.50,  mid: 0.25, scale: 0.62 },   // 一人称は小さめ（視界を塞がない）
+  // 敵と死体は正面（ローカル+Z）に大きめに付ける。向かい合ったときに爆弾とチェーンが見えるように
+  enemy:       { axis: 'y', wrist: 0.955, mid: 0.58, top: 'front', scale: 1.3 },
+  corpse:      { axis: 'y', wrist: 0.82,  mid: 0.46, top: 'front', scale: 1.15 },
+  corpsePurged:{ axis: 'y', wrist: 0.54,  mid: 0.34, top: 'front', scale: 1.15 },   // パージ済みの腕は短い
+  loose:       { axis: 'y', wrist: 0.36,  mid: 0.06 },   // 中心が原点の箱（床・吸着・奪われる腕）
+  body:        { axis: 'y', wrist: 0.375, mid: 0.08 },   // 三人称の自分の体の腕（中心が原点）
+  bodyPurged:  { axis: 'y', wrist: 0.245, mid: 0.04 },
+};
+
+const BOMB_COL = { can: 0x4b5a32, band: 0xd8b02a, metal: 0x9aa0a8, lampOff: 0x5a1712, lampOn: 0xff3b2a };
+const SCAN_COL = { body: 0xd6cbab, dark: 0x2c2b28, screen: 0x6dff9a, screenDim: 0x1f6b3a };
+const _bombGeo = {
+  can: new THREE.CylinderGeometry(0.08, 0.08, 0.28, 12),
+  band: new THREE.CylinderGeometry(0.085, 0.085, 0.03, 12),
+  lamp: new THREE.SphereGeometry(0.04, 10, 8),
+  pin: new THREE.TorusGeometry(0.042, 0.011, 6, 14),
+  pinRod: new THREE.CylinderGeometry(0.009, 0.009, 0.07, 6),
+  strap: new THREE.BoxGeometry(0.16, 0.03, 0.16),
+};
+const bombVisuals = new Set();   // 毎フレームランプとピンを更新する爆弾の見た目
+
+// 爆弾。top は爆弾を載せる面の向き（addon座標）
+function buildBombAddon(frame, top) {
+  const g = new THREE.Group();
+  const base = new THREE.Vector3(0, -frame.mid, 0);
+  const out = top.clone().multiplyScalar(0.14);
+  const can = new THREE.Mesh(_bombGeo.can, new THREE.MeshLambertMaterial({ color: BOMB_COL.can }));
+  can.position.copy(base).add(out);
+  g.add(can);
+  for (const dy of [-0.08, 0.08]) {
+    const band = new THREE.Mesh(_bombGeo.band, new THREE.MeshLambertMaterial({ color: BOMB_COL.band }));
+    band.position.copy(can.position); band.position.y += dy;
+    g.add(band);
+  }
+  // 前腕に巻いたベルト
+  const strap = new THREE.Mesh(_bombGeo.strap, new THREE.MeshLambertMaterial({ color: 0x2a2724 }));
+  strap.position.copy(base);
+  g.add(strap);
+  const lamp = new THREE.Mesh(_bombGeo.lamp, new THREE.MeshBasicMaterial({ color: BOMB_COL.lampOff }));
+  lamp.position.copy(can.position).addScaledVector(top, 0.082);
+  g.add(lamp);
+  // 安全ピン（輪っか）。チェーンはこの輪の先（pinTip）につながる
+  const pin = new THREE.Group();
+  pin.position.copy(can.position); pin.position.y += 0.16;
+  const ring = new THREE.Mesh(_bombGeo.pin, new THREE.MeshLambertMaterial({ color: BOMB_COL.metal }));
+  ring.position.y = 0.04;
+  pin.add(ring);
+  const rod = new THREE.Mesh(_bombGeo.pinRod, new THREE.MeshLambertMaterial({ color: BOMB_COL.metal }));
+  pin.add(rod);
+  g.add(pin);
+  const pinTip = new THREE.Object3D();
+  pinTip.position.copy(pin.position); pinTip.position.y += 0.085;
+  g.add(pinTip);
+  g.userData = { kind: 'bomb', lamp, pin, pinTip, can, stRef: null, phase: Math.random() * 6 };
+  bombVisuals.add(g);
+  return g;
+}
+
+// スキャナ：80年代のメガホンに小さなモニタを載せたもの
+function buildScannerAddon(frame, top) {
+  const g = new THREE.Group();
+  const w = frame.wrist;
+  const bodyMat = new THREE.MeshLambertMaterial({ color: SCAN_COL.body });
+  const darkMat = new THREE.MeshLambertMaterial({ color: SCAN_COL.dark });
+  // 手首の受け口
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.07, 12), darkMat);
+  collar.position.y = -w + 0.01;
+  g.add(collar);
+  // ラッパ（メガホン）。手首から前へ開く
+  const horn = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.13, 0.22, 16, 1, true),
+    new THREE.MeshLambertMaterial({ color: SCAN_COL.body, side: THREE.DoubleSide }));
+  horn.position.y = -w - 0.13;
+  g.add(horn);
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.014, 6, 18), darkMat);
+  mouth.rotation.x = Math.PI / 2;
+  mouth.position.y = -w - 0.24;
+  g.add(mouth);
+  const grill = new THREE.Mesh(new THREE.CircleGeometry(0.05, 12), darkMat);
+  grill.rotation.x = Math.PI / 2;
+  grill.position.y = -w - 0.03;
+  g.add(grill);
+  // 小型モニタ。画面は肘の側（一人称ではカメラの側）を向く
+  const mon = new THREE.Group();
+  mon.position.set(0, -w + 0.02, 0).addScaledVector(top, 0.125);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.11, 0.12), bodyMat);
+  mon.add(box);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.115, 0.08),
+    new THREE.MeshBasicMaterial({ color: SCAN_COL.screen }));
+  screen.rotation.x = -Math.PI / 2;
+  screen.position.y = 0.0565;
+  // 画面の面を top と同じ側へ寄せる（一人称では上を向いた面＝見える面）
+  mon.add(screen);
+  const line = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.003, 0.008),
+    new THREE.MeshBasicMaterial({ color: 0xd8ffe4 }));
+  line.position.y = 0.059;
+  mon.add(line);
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 5), darkMat);
+  antenna.position.copy(top).multiplyScalar(0.10);
+  antenna.position.y += 0.02;
+  antenna.rotation.z = 0.5;
+  mon.add(antenna);
+  g.add(mon);
+  g.userData = { kind: 'wrist', id: 'scanner', horn, mouth, screen, line, mon, pulse: 0 };
+  return g;
+}
+
+// 腕のオブジェクトに付属物を付ける／付け直す。st が変わったら呼び直す。
+// side: 外側の向き（+1 / -1）。一人称の手は top 面に載せるので使わない
+function syncArmAddons(obj, st, frameKey, side) {
+  const base = ARM_FRAMES[frameKey];
+  // 縮めて付ける枠（一人称）は、手首と爆弾の位置だけ縮めたぶん遠くに置く
+  const frame = base.scale
+    ? Object.assign({}, base, { wrist: base.wrist / base.scale, mid: base.mid / base.scale })
+    : base;
+  let ad = obj.userData.addons;
+  if (ad && (ad.frameKey !== frameKey || ad.side !== (side || 1))) {
+    // パージで腕の長さが変わった／向きが変わった。付け直す
+    if (ad.bomb) bombVisuals.delete(ad.bomb);
+    obj.remove(ad.root);
+    ad = obj.userData.addons = null;
+  }
+  if (!ad) {
+    const root = new THREE.Group();
+    if (frame.axis === 'z') root.rotation.x = Math.PI / 2;   // addon の -Y を手の -Z へ
+    if (base.scale) root.scale.setScalar(base.scale);
+    obj.add(root);
+    ad = obj.userData.addons = { root, bomb: null, wrist: null, wristId: null,
+                                 frameKey, side: side || 1 };
+  }
+  // 一人称の手は上の面（addon の -Z が手の +Y）、ほかは腕の外側（x）
+  const top = frame.axis === 'z' ? new THREE.Vector3(0, 0, -1)
+            : frame.top === 'front' ? new THREE.Vector3(0, 0, 1)
+                                    : new THREE.Vector3(side || 1, 0, 0);
+  const wantBomb = !!(st && !st.lost && st.bomb);
+  if (wantBomb && !ad.bomb) {
+    ad.bomb = buildBombAddon(frame, top);
+    ad.bomb.userData.frameKey = frameKey;
+    ad.root.add(ad.bomb);
+  }
+  if (!wantBomb && ad.bomb) { ad.root.remove(ad.bomb); bombVisuals.delete(ad.bomb); ad.bomb = null; }
+  if (ad.bomb) ad.bomb.userData.stRef = st;
+  const wantWrist = (st && !st.lost && st.wrist) ? st.wrist.id : null;
+  if (ad.wristId !== wantWrist) {
+    if (ad.wrist) ad.root.remove(ad.wrist);
+    ad.wrist = null;
+    ad.wristId = wantWrist;
+    const def = wantWrist ? WRIST_ITEMS[wantWrist] : null;
+    if (def) { ad.wrist = def.build(frame, top); ad.root.add(ad.wrist); }
+  }
+  return ad;
+}
+
+/* ---------- チェーン（乳首リング → 安全ピン）----------
+   物理は入れていない。2点のあいだに輪を並べ、たるみ（sag）だけ付ける。
+   離れるほどたるみが減って張る＝ピンが抜けそうに見える                     */
+const _chainGeo = new THREE.BoxGeometry(0.024, 0.062, 0.044);
+const _chainMat = new THREE.MeshLambertMaterial({ color: 0xc2c8d0, emissive: 0x202428 });
+function makeChain(n) {
+  const group = new THREE.Group();
+  const links = [];
+  for (let i = 0; i < (n || CONFIG.bombChainLinks); i++) {
+    const m = new THREE.Mesh(_chainGeo, _chainMat);
+    group.add(m);
+    links.push(m);
+  }
+  group.visible = false;
+  scene.add(group);
+  return { group, links };
+}
+function layChain(ch, a, b, slack) {
+  const d = a.distanceTo(b);
+  const sag = Math.max(0, (slack === undefined ? CONFIG.bombChainSlack : slack) - d) * 0.45;
+  const n = ch.links.length;
+  _gmV1.subVectors(b, a);
+  if (_gmV1.lengthSq() < 1e-6) _gmV1.set(0, -1, 0);
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const m = ch.links[i];
+    m.position.lerpVectors(a, b, t);
+    m.position.y -= Math.sin(Math.PI * t) * sag;
+    // 隣の輪へ向ける（たるみの接線）。1つおきに90度ひねって鎖に見せる
+    const t2 = Math.min(1, t + 1 / n);
+    _gmV2.lerpVectors(a, b, t2); _gmV2.y -= Math.sin(Math.PI * t2) * sag;
+    _gmV2.sub(m.position);
+    if (_gmV2.lengthSq() < 1e-8) _gmV2.copy(_gmV1);
+    m.quaternion.setFromUnitVectors(_gmUp, _gmV2.normalize());
+    if (i % 2) m.rotateY(Math.PI / 2);
+  }
+}
+function removeChain(ch) {
+  if (!ch) return;
+  scene.remove(ch.group);
+}
+
+// 胸の乳首リング（敵・死体・自分の三人称の体）
+const _ringGeo = new THREE.TorusGeometry(0.055, 0.014, 6, 14);
+// face: 胸の正面がローカル +Z なら 1、-Z なら -1
+function makeNippleRing(parent, x, y, z, face) {
+  const f = face || 1;
+  const nip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.012, 10),
+    new THREE.MeshLambertMaterial({ color: 0x5a2c27 }));
+  nip.rotation.x = Math.PI / 2;
+  nip.position.set(x, y, z);
+  parent.add(nip);
+  const ring = new THREE.Mesh(_ringGeo, new THREE.MeshLambertMaterial({ color: BOMB_COL.metal }));
+  ring.position.set(x, y - 0.035, z + 0.012 * f);
+  parent.add(ring);
+  return ring;
+}
+
+/* =========================================================
+   手首アイテムの定義（WRIST_ITEMS）
+   1件 = 1アイテム。ここに足すだけで、拾う・付ける・攻撃する・HUD が動く。
+     id / label / icon          : 識別子・表示名・HUDアイコン（HUD_ICON のキー）
+     repurge                    : 付けたあと長押しで外して撃てるか（デフォルト false）
+     canEquip(arm)              : 共通条件（パージ済み・壊れていない・未装着）に足す追加条件
+     build(frame, top)          : 見た目（addon 座標）
+     attack                     : 通常攻撃の時間 { startup, active, recover, cooldown }
+     hitCost()                  : 攻撃が当たったときに減る腕HP
+     special                    : 長押しの特殊攻撃（無ければ null）
+     idle(addon, t, st)         : アイドルのアニメーション
+     attackPose(atk)            : 一人称の手の動き { out, tilt }
+     onAttack(atk)              : 攻撃の発生（判定・演出）
+     fx.equip / fx.attack / fx.break : 演出
+   ========================================================= */
+const WRIST_ITEMS = {
+  scanner: {
+    id: 'scanner',
+    label: 'SCANNER',
+    icon: 'scanner',
+    repurge: false,
+    canEquip: () => true,
+    build: (frame, top) => buildScannerAddon(frame, top),
+    attack: {
+      get startup() { return CONFIG.scanStartup; },
+      get active() { return CONFIG.scanActive; },
+      get recover() { return CONFIG.scanRecover; },
+      get cooldown() { return CONFIG.scanCooldown; },
+    },
+    hitCost: () => CONFIG.scanHitCost,
+    special: null,
+    idle: (ad, t) => {
+      // 画面の走査線が上下し、明るさがわずかに揺れる（ブラウン管）
+      const u = (t * 1.3) % 1;
+      ad.userData.line.position.z = (u - 0.5) * 0.07;
+      const k = ad.userData.pulse;
+      const flick = 0.82 + Math.sin(t * 31) * 0.05 + Math.sin(t * 7.3) * 0.06;
+      ad.userData.screen.material.color.setHex(SCAN_COL.screen)
+        .multiplyScalar(Math.min(1.6, flick + k * 0.8));
+      ad.userData.horn.scale.set(1 + k * 0.18, 1 - k * 0.1, 1 + k * 0.18);
+      ad.userData.pulse = Math.max(0, k - 0.05);
+    },
+    attackPose: (atk) => {
+      const a = WRIST_ITEMS.scanner.attack;
+      const out = swingCurve(atk.t, atk.startup + a.active, atk.startup + a.active + a.recover);
+      return { out: out * 0.32, tilt: -out * 0.12 };
+    },
+    onAttack: (atk) => startScanRipple(atk),
+    fx: {
+      equip: (side) => {
+        doFlash(0.30, '#7dffb0');
+        addShake(0.22);
+        addHitstop(0.08);
+        sfx('equip');
+        showFeedback('SCANNER ' + side[0], '#7dffb0', 34);
+      },
+      attack: (side) => {
+        const ad = fpHands[side].userData.addons;
+        if (ad && ad.wrist) ad.wrist.userData.pulse = 1;
+        sfx('scan');
+      },
+      break: (at) => {
+        // メガホンとモニタの破片（白っぽいプラスチックと緑の画面）
+        for (let i = 0; i < 8; i++) {
+          const s = 0.03 + Math.random() * 0.05;
+          const m = new THREE.Mesh(new THREE.BoxGeometry(s, s * 0.6, s),
+            new THREE.MeshLambertMaterial({ color: i % 3 === 0 ? SCAN_COL.screen : SCAN_COL.body,
+                                            transparent: true }));
+          m.position.copy(at);
+          scene.add(m);
+          const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.3, Math.random() - 0.5).normalize();
+          debris.push({ obj: m, vel: dir.multiplyScalar(3 + Math.random() * 2),
+            spin: new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12),
+            rest: false, life: CONFIG.armGibLife });
+        }
+        sfx('break');
+      },
+    },
+  },
+};
+
+const wristCool = { LEFT: 0, RIGHT: 0 };          // 手首アイテムの攻撃のクールダウン(s)
+
+// 共通の装着条件。アイテム固有の条件は def.canEquip に足す
+function canEquipWrist(arm, id) {
+  const def = WRIST_ITEMS[id];
+  if (!def || !arm) return false;
+  return !!arm.purged && !arm.lost && !arm.wrist && def.canEquip(arm);
+}
+
+function wristDefOf(arm) {
+  return (arm && !arm.lost && arm.wrist) ? (WRIST_ITEMS[arm.wrist.id] || null) : null;
+}
+
+// 手首に付ける。腕HPには触らない（回復も消耗もしない）
+function equipWrist(side, id) {
+  const arm = player.arms[side];
+  if (!canEquipWrist(arm, id)) return false;
+  arm.wrist = { id };
+  wristCool[side] = 0;
+  mouseHold[side] = null;
+  if (punchBuffer && punchBuffer.side === side) punchBuffer = null;
+  updateArmVisuals();
+  WRIST_ITEMS[id].fx.equip(side);
+  return true;
+}
+
+// 手首アイテムの攻撃（クリック1回＝1回）。長押しでも1回しか出ない
+function useWrist(side) {
+  const arm = player.arms[side];
+  const def = wristDefOf(arm);
+  if (!def) return false;
+  if (player.guard || !canCancelNow() || wristCool[side] > 0) return false;
+  cancelCurrentAction();
+  player.attack = { side, type: 'wrist', item: def.id, t: 0,
+                    startup: def.attack.startup, resolved: false };
+  wristCool[side] = def.attack.cooldown;
+  def.fx.attack(side);
+  return true;
+}
+
+// 再パージ（repurge:true のアイテムだけ）。アイテムを手首ごと撃ち出して外す
+function doWristPurge(side) {
+  const arm = player.arms[side];
+  const def = wristDefOf(arm);
+  if (!def || !def.repurge || !canCancelNow()) return false;
+  cancelCurrentAction();
+  arm.wrist = null;
+  const o = new THREE.Vector3(), d = new THREE.Vector3();
+  aimRay(o, d);
+  o.y -= 0.15;
+  o.x += Math.cos(yaw) * (side === 'LEFT' ? -0.3 : 0.3);
+  o.z += -Math.sin(yaw) * (side === 'LEFT' ? -0.3 : 0.3);
+  const mesh = def.build(ARM_FRAMES.loose, new THREE.Vector3(1, 0, 0));
+  mesh.position.copy(o);
+  scene.add(mesh);
+  projectiles.push({ obj: mesh, side, vel: d.multiplyScalar(CONFIG.purgeSpeed), travelled: 0, dead: false });
+  player.recoverT = CONFIG.punchRecover;
+  updateArmVisuals();
+  return true;
+}
+
+/* ---------- マップに置く手首アイテム ---------- */
+let wristPickups = [];   // { id, group, item, base, active, respawnAt, bonk, owner }
+
+function spawnWristPickup(id, x, z, opts) {
+  const o = opts || {};
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.38, 0.95, 14),
+    new THREE.MeshLambertMaterial({ color: 0x343b44 }));
+  ped.position.y = 0.475;
+  g.add(ped);
+  const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.04, 14),
+    new THREE.MeshBasicMaterial({ color: 0x3cff8a, transparent: true, opacity: 0.55 }));
+  glow.position.y = 0.97;
+  g.add(glow);
+  // アイテムは手首を下にして立てて置く（ラッパが上を向く）
+  const holder = new THREE.Group();
+  holder.position.y = 1.08;
+  const item = WRIST_ITEMS[id].build(ARM_FRAMES.loose, new THREE.Vector3(0, 0, 1));
+  item.rotation.x = -Math.PI / 2;         // ラッパ（addon の -Y）を水平に、モニタを上に
+  item.position.z = -(ARM_FRAMES.loose.wrist + 0.1);
+  holder.add(item);
+  holder.scale.setScalar(1.25);
+  g.add(holder);
+  scene.add(g);
+  const pk = { id, group: g, holder, item, glow, base: new THREE.Vector3(x, 1.25, z),
+               active: true, respawnAt: null, bonk: 0, owner: o.owner || null,
+               respawn: (o.respawn === undefined) ? CONFIG.wristPickupRespawn : o.respawn };
+  wristPickups.push(pk);
+  return pk;
+}
+
+function removeWristPickup(pk) {
+  scene.remove(pk.group);
+  wristPickups = wristPickups.filter((p) => p !== pk);
+}
+
+function clearWristPickups(owner) {
+  for (const pk of wristPickups.slice()) if (!owner || pk.owner === owner) removeWristPickup(pk);
+}
+
+// パンチが手首アイテムに当たるか。敵より手前にあるときだけアイテムに当たる
+function findWristPickupHit(enemy) {
+  const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
+  let best = null, bestD = Infinity;
+  for (const pk of wristPickups) {
+    if (!pk.active) continue;
+    const dx = pk.base.x - playerPos.x, dz = pk.base.z - playerPos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > CONFIG.punchRange + CONFIG.wristPickupReach || d < 0.001) continue;
+    const ang = Math.acos(Math.max(-1, Math.min(1, (dx * fwdX + dz * fwdZ) / d))) * 180 / Math.PI;
+    if (ang > CONFIG.wristPickupAngle) continue;
+    if (d < bestD) { bestD = d; best = pk; }
+  }
+  if (!best) return null;
+  if (enemy) {
+    const de = Math.hypot(enemy.group.position.x - playerPos.x, enemy.group.position.z - playerPos.z);
+    if (de < bestD) return null;
+  }
+  return best;
+}
+
+// 殴った。付けられる腕なら手首に付く。付けられなければ揺れるだけ（腕HPは減らない）
+function hitWristPickup(pk, side) {
+  if (canEquipWrist(player.arms[side], pk.id)) {
+    equipWrist(side, pk.id);
+    pk.active = false;
+    pk.holder.visible = false;
+    pk.glow.visible = false;
+    pk.respawnAt = (pk.respawn === null) ? null : worldTime + pk.respawn;
+    return true;
+  }
+  pk.bonk = 1;
+  addHitstop(0.04);
+  addShake(0.06);
+  sfx('bonk');
+  return false;
+}
+
+function updateWristPickups(rdt) {
+  for (const pk of wristPickups) {
+    if (!pk.active) {
+      if (pk.respawnAt !== null && worldTime >= pk.respawnAt) {
+        pk.active = true; pk.holder.visible = true; pk.glow.visible = true; pk.respawnAt = null;
+      }
+      continue;
+    }
+    pk.holder.rotation.y += rdt * 0.9;
+    pk.holder.position.y = 1.08 + Math.sin(clock.elapsedTime * 2.2) * 0.04;
+    if (pk.bonk > 0) {
+      pk.bonk = Math.max(0, pk.bonk - rdt * 3);
+      pk.holder.rotation.z = Math.sin(pk.bonk * 30) * 0.25 * pk.bonk;
+    } else pk.holder.rotation.z = 0;
+    pk.glow.material.opacity = 0.35 + Math.sin(clock.elapsedTime * 3) * 0.2;
+    WRIST_ITEMS[pk.id].idle(pk.item, clock.elapsedTime);
+  }
+}
+
+/* =========================================================
+   スキャン（波紋）
+   クロスヘアの向きへ扇状に広がる。毎フレーム半径を広げて、
+   波面が通った敵に1回ずつ当たる（途中で入ってきた敵も拾う）。
+   ========================================================= */
+let scanRipples = [];
+let scanStats = { scans: 0, hits: 0, charged: 0 };   // 検証用の数え上げ
+const _scanRingGeo = new THREE.RingGeometry(0.95, 1.0, 64);
+
+function startScanRipple(atk) {
+  const side = atk.side;
+  const arm = player.arms[side];
+  const origin = new THREE.Vector3(), dir = new THREE.Vector3();
+  aimRay(origin, dir);
+  const flat = new THREE.Vector3(dir.x, 0, dir.z);
+  if (flat.lengthSq() < 1e-6) flat.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  flat.normalize();
+  // 見た目の波紋はスキャナの口から出る
+  const from = origin.clone();
+  const ad = fpHands[side].userData.addons;
+  if (ad && ad.wrist && fpHands[side].visible) ad.wrist.userData.mouth.getWorldPosition(from);
+  const rings = [];
+  for (let i = 0; i < 3; i++) {
+    const m = new THREE.Mesh(_scanRingGeo, new THREE.MeshBasicMaterial({
+      color: 0x7dffb0, transparent: true, opacity: 0, depthWrite: false,
+      side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+    scene.add(m);
+    rings.push(m);
+  }
+  scanRipples.push({ side, armRef: arm, origin, dir: dir.clone(), flat, from, r: 0,
+                     hitSet: new Set(), charged: false, rings });
+  scanStats.scans++;
+}
+
+function scanTargetable(en) {
+  if (en.state === E.DEAD || en.state === E.FLEE || en.state === E.HIDDEN ||
+      en.state === E.BOSS_KICKED) return false;
+  if (!en.group.visible) return false;
+  return true;
+}
+
+function updateScanRipples(dt) {
+  if (!scanRipples.length) return;
+  const half = CONFIG.scanAngle * Math.PI / 180;
+  for (const rp of scanRipples) {
+    const prevR = rp.r;
+    rp.r = Math.min(CONFIG.scanRange, rp.r + CONFIG.scanSpeed * dt);
+    // --- 当たり（水平面で見る。高さは問わない）---
+    for (const en of enemies) {
+      if (rp.hitSet.has(en) || !scanTargetable(en)) continue;
+      const dx = en.group.position.x - rp.origin.x, dz = en.group.position.z - rp.origin.z;
+      const d = Math.hypot(dx, dz);
+      if (d > rp.r + CONFIG.scanBodyPad || d > CONFIG.scanRange + CONFIG.scanBodyPad) continue;
+      if (d > 0.001) {
+        const ang = Math.acos(Math.max(-1, Math.min(1, (dx * rp.flat.x + dz * rp.flat.z) / d)));
+        if (ang > half + Math.atan2(CONFIG.scanBodyPad, Math.max(0.5, d))) continue;
+      }
+      rp.hitSet.add(en);
+      onScanHit(rp, en);
+    }
+    // --- 見た目：口から前へ広がる輪 ---
+    for (let i = 0; i < rp.rings.length; i++) {
+      const rr = Math.max(0, rp.r - i * 0.9);
+      const m = rp.rings[i];
+      const k = rr / CONFIG.scanRange;
+      m.position.copy(rp.from).addScaledVector(rp.dir, rr);
+      const rad = 0.12 + rr * Math.tan(half);
+      m.scale.set(rad, rad, 1);
+      // 手元は薄く、離れるほど見える（目の前を塞がない）
+      const near = Math.min(1, rr / 3.5);
+      m.material.opacity = rr > 0 ? (1 - k) * near * (0.5 - i * 0.14) : 0;
+    }
+    rp.done = (prevR >= CONFIG.scanRange);
+  }
+  for (const rp of scanRipples) {
+    if (!rp.done) continue;
+    for (const m of rp.rings) { scene.remove(m); m.material.dispose(); }
+  }
+  scanRipples = scanRipples.filter((rp) => !rp.done);
+}
+
+// 波紋が敵に触れた。印は1体につき1つだけ（付いていれば何もしない）。
+// 腕HPはこの1回のスキャンで最初に触れたときだけ減らす
+function onScanHit(rp, en) {
+  scanStats.hits++;
+  markWeak(en);
+  en.scanPing = 0.35;
+  if (!rp.charged) {
+    rp.charged = true;
+    scanStats.charged++;
+    const arm = player.arms[rp.side];
+    if (arm === rp.armRef && !arm.lost) damageArm(rp.side, WRIST_ITEMS.scanner.hitCost());
+  }
+}
+
+function clearScanRipples() {
+  for (const rp of scanRipples) for (const m of rp.rings) { scene.remove(m); m.material.dispose(); }
+  scanRipples = [];
+}
+
+/* =========================================================
+   弱点（WEAK POINT）
+   WEAK_SPOTS : 印を付けられる場所（どの部位基準に、どこへ）
+   WEAK_TYPES : 敵の種類ごとの候補と選び方（fixed=いつも1つ目 / random=候補から1つ）
+                と効き方（stun=即スタン / stunMul=スタン値を倍）
+   敵の種類は weakTypeOf(en)：ボス / 強敵(en.strong) / それ以外は en.weakType か grunt
+   ========================================================= */
+const WEAK_SPOTS = {
+  head:  { anchor: 'head',  at: (en) => [0, 0.04, en.head.geometry.parameters.radius * 0.92] },
+  chest: { anchor: 'torso', at: (en) => [0, en.torso.geometry.parameters.height * 0.18,
+                                         en.torso.geometry.parameters.depth / 2 + 0.03] },
+  belly: { anchor: 'torso', at: (en) => [0, -en.torso.geometry.parameters.height * 0.25,
+                                         en.torso.geometry.parameters.depth / 2 + 0.03] },
+};
+const WEAK_TYPES = {
+  grunt:  { pick: 'random', spots: ['head', 'chest', 'belly'], effect: 'stun' },
+  strong: { pick: 'fixed',  spots: ['chest'], effect: 'stunMul' },
+  boss:   { pick: 'fixed',  spots: ['chest'], effect: 'stunMul' },
+};
+function weakTypeOf(en) {
+  if (en.boss) return 'boss';
+  if (en.strong) return 'strong';
+  return en.weakType || 'grunt';
+}
+
+let weakMarkerTex = null;
+function weakTexture() {
+  if (weakMarkerTex) return weakMarkerTex;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const c = cv.getContext('2d');
+  if (c) {
+    c.translate(64, 64);
+    const glow = c.createRadialGradient(0, 0, 8, 0, 0, 62);
+    glow.addColorStop(0, 'rgba(255,60,40,0.55)');
+    glow.addColorStop(1, 'rgba(255,40,30,0)');
+    c.fillStyle = glow; c.beginPath(); c.arc(0, 0, 62, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#ff2a1f'; c.lineWidth = 9;
+    c.beginPath(); c.arc(0, 0, 38, 0, Math.PI * 2); c.stroke();
+    c.lineWidth = 7;
+    for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+      c.beginPath();
+      c.moveTo(Math.cos(a) * 26, Math.sin(a) * 26);
+      c.lineTo(Math.cos(a) * 56, Math.sin(a) * 56);
+      c.stroke();
+    }
+    c.fillStyle = '#ffd2c8';
+    c.beginPath(); c.arc(0, 0, 10, 0, Math.PI * 2); c.fill();
+  }
+  weakMarkerTex = new THREE.CanvasTexture(cv);
+  return weakMarkerTex;
+}
+
+// 印を付ける。付いていれば何もしない（増やさない・場所も変えない）。付けたら true
+function markWeak(en) {
+  if (en.weak) return false;
+  const type = WEAK_TYPES[weakTypeOf(en)] || WEAK_TYPES.grunt;
+  const key = (type.pick === 'fixed') ? type.spots[0]
+            : type.spots[Math.floor(Math.random() * type.spots.length)];
+  const spot = WEAK_SPOTS[key];
+  const anchor = (spot.anchor === 'head') ? en.head : en.torso;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: weakTexture(), color: 0xffffff, transparent: true, depthTest: false, depthWrite: false }));
+  sprite.renderOrder = 999;
+  const p = spot.at(en);
+  sprite.position.set(p[0], p[1], p[2]);
+  const s = CONFIG.weakMarkerSize;
+  sprite.scale.set(s, s, 1);
+  anchor.add(sprite);
+  en.weak = { spot: key, marker: sprite, anchor, pop: 1, hit: 0 };
+  sfx('lock');
+  return true;
+}
+
+function clearWeak(en) {
+  if (!en || !en.weak) return;
+  const m = en.weak.marker;
+  if (m.parent) m.parent.remove(m);
+  m.material.dispose();
+  en.weak = null;
+}
+
+function weakWorld(en, out) {
+  en.group.updateMatrixWorld(true);
+  return en.weak.marker.getWorldPosition(out);
+}
+
+// 弱点に当たったか：線分（攻撃の通り道）と弱点の距離で見る
+function weakHitRay(en, origin, dir, len, radius) {
+  if (!en || !en.weak) return false;
+  weakWorld(en, _gmV3);
+  _gmV1.copy(origin);
+  _gmV2.copy(origin).addScaledVector(dir, len);
+  const r = (radius === undefined) ? CONFIG.weakHitRadius : radius;
+  return pointSegDist2(_gmV3, _gmV1, _gmV2) <= r * r;
+}
+// 飛び道具（銃弾・パージした手首）。撃った瞬間のクロスヘアの線があればそれで、
+// 無ければ（阿修羅の追加の腕の弾）このフレームに弾が通った線で見る
+function projWeakHit(p, en) {
+  if (!en || !en.weak) return false;
+  if (p.aimO) {
+    const len = p.aimO.distanceTo(p.obj.position) + 1.2;
+    return weakHitRay(en, p.aimO, p.aimD, len);
+  }
+  if (!p.prev) return false;
+  return weakHitRay(en, p.prev, p.vel.clone().normalize(), p.prevStep + 1.2);
+}
+// クロスヘアの向きで殴った（拳・阿修羅の拳）
+function weakHitByAim(en, len) {
+  if (!en || !en.weak) return false;
+  const o = new THREE.Vector3(), d = new THREE.Vector3();
+  aimRay(o, d);
+  return weakHitRay(en, o, d, len);
+}
+// 触手の薙ぎ払い：刃が通った角度の帯に弱点が入っていて、刃の高さに近いか
+function weakHitBySweep(en, lo, hi) {
+  if (!en || !en.weak) return false;
+  weakWorld(en, _gmV3);
+  const dx = _gmV3.x - playerPos.x, dz = _gmV3.z - playerPos.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.001) return false;
+  const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
+  const rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
+  const ang = Math.atan2(dx * rgtX + dz * rgtZ, dx * fwdX + dz * fwdZ);
+  const pad = Math.atan2(CONFIG.weakHitRadius, Math.max(0.6, d));
+  if (ang < lo - pad || ang > hi + pad) return false;
+  const bladeY = playerPos.y + EYE - 0.28 + Math.tan(pitch) * d;
+  return Math.abs(_gmV3.y - bladeY) <= CONFIG.weakSweepHeight;
+}
+
+// 弱点に当たった。stun は「普通に当たったときのスタン値」
+let weakStats = { hits: 0 };
+function weakStrike(en, stun) {
+  const type = WEAK_TYPES[weakTypeOf(en)] || WEAK_TYPES.grunt;
+  weakStats.hits++;
+  if (en.weak) en.weak.hit = 1;
+  if (type.effect === 'stun') {
+    // 雑魚は即スタン。崩せない状態（拘束・投げ・掴み中）では普通に溜まるだけ
+    const canDrop = en.state !== E.DEAD && en.state !== E.STUNNED && en.state !== E.GRABBED &&
+                    en.state !== E.TETHER && en.state !== E.THROWN;
+    if (canDrop) { en.stun = stunMax(en); enterStun(en); } else applyStun(en, stun);
+  } else {
+    applyStun(en, stun * CONFIG.weakStunMul);
+  }
+  addHitstop(0.10);
+  addShake(0.32);
+  doFlash(0.30, '#ff4a3a');
+  sfx('weak');
+}
+function weakFeedback() {
+  showFeedback('WEAK POINT!', '#ff4a3a', 42);
+}
+
+function updateWeakMarkers(rdt) {
+  for (const en of enemies) {
+    const w = en.weak;
+    if (en.scanPing > 0) en.scanPing -= rdt;
+    if (!w) continue;
+    // 背中側から見ているときは薄くする（印は体の正面に付いている）
+    en.group.getWorldPosition(_gmV1);
+    _gmV2.set(Math.sin(en.group.rotation.y), 0, Math.cos(en.group.rotation.y));
+    _gmV1.sub(camera.position).multiplyScalar(-1);
+    const front = _gmV1.dot(_gmV2) > 0;
+    w.pop = Math.max(0, w.pop - rdt * 2.5);
+    w.hit = Math.max(0, w.hit - rdt * 2.0);
+    const pulse = 1 + Math.sin(clock.elapsedTime * 6) * 0.10 + w.pop * 0.9 + w.hit * 0.8;
+    const s = CONFIG.weakMarkerSize * pulse / (en.group.scale.x || 1);
+    w.marker.scale.set(s, s, 1);
+    w.marker.material.opacity = front ? 1 : 0.4;
+  }
+}
+
+/* =========================================================
+   爆弾腕（BOMB）
+   ========================================================= */
+let bombSnaps = [];     // ピンが抜ける瞬間の演出 { chain, ring, obj, st, t, pinFrom }
+let bombPins = [];      // 抜けて飛んでいくピン
+let bombBlasts = [];    // 爆発の火の玉
+let bombStats = { pulls: 0, blasts: 0, last: null };   // 検証用
+
+// 安全ピンを抜く（腕が胴体から離れた）。st は離れた腕の状態、obj はその腕の見た目、
+// ringWorld はチェーンがつながっていた胸のリングの位置
+function pullBombPin(st, obj, ringWorld) {
+  if (!st || !st.bomb || st.bomb.armed) return false;
+  st.bomb.armed = true;
+  st.bomb.fuse = CONFIG.bombFuse;
+  st.bomb.snap = true;          // チェーンが張っている間（ピンはまだ刺さっている）
+  bombStats.pulls++;
+  const ch = makeChain(CONFIG.bombChainLinks);
+  ch.group.visible = true;
+  bombSnaps.push({ chain: ch, ring: ringWorld.clone(), obj, st, t: 0 });
+  return true;
+}
+
+function updateBombSnaps(rdt) {
+  for (const s of bombSnaps) {
+    s.t += rdt;
+    const ad = s.obj && s.obj.userData.addons;
+    const tip = new THREE.Vector3();
+    if (ad && ad.bomb && inScene(s.obj)) ad.bomb.userData.pinTip.getWorldPosition(tip);
+    else if (s.obj) s.obj.getWorldPosition(tip);
+    layChain(s.chain, s.ring, tip, 0);
+    if (s.t >= CONFIG.bombChainSnapTime) {
+      s.done = true;
+      s.st.bomb.snap = false;
+      removeChain(s.chain);
+      // ピンが抜けて胸の側へ跳ねる
+      const pin = new THREE.Mesh(_bombGeo.pin, new THREE.MeshLambertMaterial({ color: BOMB_COL.metal }));
+      pin.position.copy(tip);
+      scene.add(pin);
+      const back = s.ring.clone().sub(tip).normalize().multiplyScalar(3.5);
+      back.y += 2.6;
+      bombPins.push({ obj: pin, vel: back, life: 1.2 });
+      sfx('clink');
+      addShake(0.25);
+      doFlash(0.20, '#ff6a50');
+      showFeedback('PIN OUT', '#ff5a48', 36);
+    }
+  }
+  bombSnaps = bombSnaps.filter((s) => !s.done);
+  for (const p of bombPins) {
+    p.life -= rdt;
+    p.vel.y -= 14 * rdt;
+    p.obj.position.addScaledVector(p.vel, rdt);
+    p.obj.rotation.x += 18 * rdt; p.obj.rotation.y += 11 * rdt;
+    if (p.obj.position.y < 0.03) { p.obj.position.y = 0.03; p.vel.multiplyScalar(0.3); p.vel.y = Math.abs(p.vel.y) * 0.3; }
+  }
+  for (const p of bombPins) if (p.life <= 0) scene.remove(p.obj);
+  bombPins = bombPins.filter((p) => p.life > 0);
+}
+
+// 爆発。attached=true は自分の腕に付いたまま爆発した（避けようがないので無敵も効かない）
+function explodeBomb(pos, opts) {
+  const o = opts || {};
+  const at = pos.clone();
+  bombStats.blasts++;
+  bombStats.last = { pos: at.clone(), attached: !!o.attached, t: worldTime };
+  // 火の玉と床の焦げ
+  // 自分の腕に付いたまま爆発するとカメラが火の玉の内側に入るので、裏面も描く
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), new THREE.MeshBasicMaterial({
+    color: 0xffa040, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending }));
+  ball.position.copy(at);
+  scene.add(ball);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.7, 1.0, 40), new THREE.MeshBasicMaterial({
+    color: 0xff7a30, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(at.x, 0.03, at.z);
+  scene.add(ring);
+  bombBlasts.push({ ball, ring, t: 0 });
+  spawnBloodDecal(at.x, at.z, 0.9, 0.55);
+  spawnFleshBurst(at, 10, 7.5, null, 1.6);
+  for (let i = 0; i < 8; i++) {
+    const s = 0.04 + Math.random() * 0.05;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s * 1.8),
+      new THREE.MeshLambertMaterial({ color: i % 2 ? BOMB_COL.can : 0x3a3d42, transparent: true }));
+    m.position.copy(at);
+    scene.add(m);
+    const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.2, Math.random() - 0.5).normalize();
+    debris.push({ obj: m, vel: dir.multiplyScalar(6 + Math.random() * 5),
+      spin: new THREE.Vector3(Math.random() * 20, Math.random() * 20, Math.random() * 20),
+      rest: false, life: 1.8 });
+  }
+  sfx('boom');
+  addShake(0.95);
+  addHitstop(0.12);
+  doFlash(0.65, '#ffb050');
+
+  // --- ダメージ（水平距離）---
+  const r = CONFIG.bombRadius;
+  const dp = Math.hypot(playerPos.x - at.x, playerPos.z - at.z);
+  const bodyMode = (state === S.HUMAN || state === S.RISE_IN || state === S.RISING || state === S.RISE_OUT);
+  if (o.attached || (dp <= r && (bodyMode || state === S.HEAD))) {
+    if (!o.attached && player.invuln > 0) {
+      if (!inFinisher()) showFeedback('DODGE', '#9ce8ff', 24);
+    } else if (damagePlayer(CONFIG.bombDamagePlayer) === 'body') {
+      doFlash(0.6, '#ff3b30');
+      showFeedback(player.hp <= 0 ? 'YOU DOWN — [G] RESET' : 'BLAST', '#ff6b5e', 40);
+    }
+  } else showFeedback('BOOM', '#ffb050', 40);
+  for (const en of enemies.slice()) {
+    if (en.state === E.DEAD || en.state === E.GRABBED || en.state === E.FLEE ||
+        en.state === E.HIDDEN || !en.group.visible) continue;
+    const d = Math.hypot(en.group.position.x - at.x, en.group.position.z - at.z);
+    if (d > r) continue;
+    applyStun(en, CONFIG.bombStunEnemy);
+    applyDamage(en, CONFIG.bombDamageEnemy);
+    if (en.state !== E.DEAD && en.state !== E.STUNNED) enterHitReact(en, 1.6, true);
+  }
+}
+
+function updateBombBlasts(rdt) {
+  for (const b of bombBlasts) {
+    b.t += rdt;
+    const k = Math.min(1, b.t / 0.45);
+    const R = CONFIG.bombRadius;
+    b.ball.scale.setScalar(0.3 + R * 0.55 * Math.sqrt(k));
+    b.ball.material.opacity = 0.9 * (1 - k);
+    b.ball.material.color.setHex(k < 0.3 ? 0xfff0b0 : 0xff7a30);
+    b.ring.scale.setScalar(0.4 + R * k);
+    b.ring.material.opacity = 0.8 * (1 - k);
+  }
+  for (const b of bombBlasts) {
+    if (b.t < 0.45) continue;
+    scene.remove(b.ball); scene.remove(b.ring);
+    b.ball.material.dispose(); b.ring.material.dispose();
+  }
+  bombBlasts = bombBlasts.filter((b) => b.t < 0.45);
+}
+
+// ダクトの男の付けている腕を数え直す（奪った腕のぶんだけ一撃が重い）
+function bossRecountArms(en) {
+  let stolen = 0;
+  for (const k of ['LEFT', 'RIGHT']) {
+    const p = en.parts[k];
+    if (p.parent === en.pivotRoot && p.userData.armState) stolen++;
+  }
+  en.stolen = stolen;
+  en.bonusDamage = stolen * CONFIG.bossStolenArmDamage;
+}
+
+// 爆弾が付いた腕を消す（爆発で吹き飛んだ）。プレイヤーの腕
+function blowOffPlayerArm(side) {
+  const st = player.arms[side];
+  st.lost = true; st.hp = 0; st.bomb = null; st.wrist = null; st.purged = false;
+  gunHold[side] = false;
+  mouseHold[side] = null;
+  if (player.attack && player.attack.side === side) player.attack = null;
+  if (tentHold && tentHold.side === side) detachTentacle();
+  updateArmVisuals();
+}
+
+// 腕の位置（爆発の中心）
+function playerArmWorld(side, out) {
+  const hand = fpHands[side];
+  const ad = hand.userData.addons;
+  if (state === S.HUMAN && hand.visible && ad && ad.bomb) return ad.bomb.userData.can.getWorldPosition(out);
+  return out.copy(shoulderWorld(side));
+}
+
+// 秒読み。爆弾は腕の状態に載っているので、腕が今いる場所を全部見て回る。
+// 1つの腕の状態は必ず1か所にしかない（移すときは cloneArmState で移して元を捨てる）
+function bombTicks(st, wdt) {
+  if (!st || !st.bomb || !st.bomb.armed || st.lost) return false;
+  if (st.bomb.snap) return false;               // チェーンが張っている間はまだ（ピンが抜けた瞬間から数える）
+  st.bomb.fuse -= wdt;
+  return st.bomb.fuse <= 0;
+}
+function updateBombs(wdt) {
+  const at = new THREE.Vector3();
+  // 1) 自分の腕（体があるときだけ。頭モード中の体は死体の側にある）
+  const bodyMode = (state === S.HUMAN || state === S.RISE_IN || state === S.RISING || state === S.RISE_OUT);
+  if (bodyMode) {
+    for (const side of ['LEFT', 'RIGHT']) {
+      if (!bombTicks(player.arms[side], wdt)) continue;
+      playerArmWorld(side, at);
+      blowOffPlayerArm(side);
+      explodeBomb(at, { attached: true });
+    }
+  }
+  // 2) 体へ吸着中の腕
+  for (const g of graftArms) {
+    if (g.landed || !bombTicks(g.armState, wdt)) continue;
+    g.landed = true;              // 着かないまま消える
+    g.obj.getWorldPosition(at);
+    scene.remove(g.obj);
+    explodeBomb(at, {});
+  }
+  graftArms = graftArms.filter((g) => !g.landed);
+  // 3) 床の腕・飛んでいる腕
+  for (const p of severedParts.slice()) {
+    if (!bombTicks(p.armState, wdt)) continue;
+    at.copy(p.obj.position);
+    removeSeveredPart(p, true);
+    explodeBomb(at, {});
+  }
+  // 4) 死体の腕（ピンが抜けた腕を付けたまま体を捨てた場合）
+  for (const c of corpses.slice()) {
+    for (const key of ['LEFT', 'RIGHT']) {
+      if (!bombTicks(c.arms[key], wdt)) continue;
+      const pv = c.armPivots[key];
+      if (pv) { pv.getWorldPosition(at); if (pv.parent) pv.parent.remove(pv); } else c.group.getWorldPosition(at);
+      c.arms[key] = null; c.armPivots[key] = null;
+      if (c.armEls[key]) { c.armEls[key].remove(); c.armEls[key] = null; }
+      explodeBomb(at, {});
+    }
+  }
+  // 5) ダクトの男：奪って飛ばしている腕／付けた腕／食べている腕
+  for (let i = stolenArms.length - 1; i >= 0; i--) {
+    const a = stolenArms[i];
+    if (!bombTicks(a.armState, wdt)) continue;
+    at.copy(a.obj.position);
+    scene.remove(a.obj);
+    stolenArms.splice(i, 1);
+    explodeBomb(at, {});
+  }
+  if (typeof bossMan !== 'undefined' && bossMan) {
+    const en = bossMan;
+    for (const key of ['LEFT', 'RIGHT']) {
+      const p = en.parts[key];
+      if (p.parent !== en.pivotRoot || !bombTicks(p.userData.armState, wdt)) continue;
+      p.getWorldPosition(at);
+      en.pivotRoot.remove(p);
+      bossRecountArms(en);
+      explodeBomb(at, {});
+    }
+    if (en.eat && bombTicks(en.eat.armState, wdt)) {
+      en.eat.mesh.getWorldPosition(at);
+      bossClearEat(en);
+      if (en.state === E.BOSS_EAT) setEnemyState(en, E.IDLE);
+      explodeBomb(at, {});
+    }
+  }
+}
+
+// ランプの点滅とピンの出し入れ（見た目だけ）
+function updateBombVisuals(rdt) {
+  for (const g of bombVisuals) {
+    if (!inScene(g)) { bombVisuals.delete(g); continue; }
+    const st = g.userData.stRef;
+    const b = st && st.bomb;
+    const armed = !!(b && b.armed);
+    g.userData.pin.visible = !armed || !!b.snap;
+    if (armed) {
+      const left = Math.max(0, (b.fuse === undefined ? CONFIG.bombFuse : b.fuse) / CONFIG.bombFuse);
+      g.userData.phase += rdt * (6 + (1 - left) * 26);
+      const on = Math.sin(g.userData.phase) > 0;
+      g.userData.lamp.material.color.setHex(on ? BOMB_COL.lampOn : BOMB_COL.lampOff);
+      g.userData.lamp.scale.setScalar(on ? 1.5 : 1);
+      if (on && !g.userData.lastOn && g.userData.frameKey === 'fp') sfx('beep');
+      g.userData.lastOn = on;
+    } else {
+      g.userData.lamp.material.color.setHex(BOMB_COL.lampOff);
+      g.userData.lamp.scale.setScalar(1);
+    }
+  }
+}
+
+/* ---------- 胸とつながったチェーン（ピンが刺さっている間だけ）---------- */
+// 一人称のチェーンはカメラのすぐ前に来るので、細く・輪を多くする
+function makeFpChain() {
+  const ch = makeChain(24);
+  for (const m of ch.links) m.scale.setScalar(0.5);
+  return ch;
+}
+const playerBombRig = {
+  fp: { LEFT: makeFpChain(), RIGHT: makeFpChain() },
+  body: { LEFT: makeChain(), RIGHT: makeChain() },
+  ring: { LEFT: null, RIGHT: null },
+};
+{
+  // 三人称の自分の体の胸のリング（ライジング中に見える）
+  // 自分の体は -Z が正面（yaw=0 で -Z を向く）
+  const torso = playerGroup.children[0];
+  playerBombRig.ring.LEFT = makeNippleRing(torso, -0.15, 0.22, -0.29, -1);
+  playerBombRig.ring.RIGHT = makeNippleRing(torso, 0.15, 0.22, -0.29, -1);
+}
+// 自分の胸のリングの位置（一人称は見えないので、カメラの下＝胸のあたり）
+function playerChestWorld(side, out) {
+  const sx = (side === 'LEFT') ? -0.15 : 0.15;
+  return out.set(playerPos.x + Math.cos(yaw) * sx - Math.sin(yaw) * 0.26,
+                 playerPos.y + 1.30,
+                 playerPos.z - Math.sin(yaw) * sx - Math.cos(yaw) * 0.26);
+}
+
+function safeBomb(st) { return !!(st && !st.lost && st.bomb && !st.bomb.armed); }
+
+function updateBombChains() {
+  const a = new THREE.Vector3(), b = new THREE.Vector3();
+  // --- 敵 ---
+  for (const en of enemies) {
+    if (!en.bombRig) continue;
+    for (const key of ['LEFT', 'RIGHT']) {
+      const rig = en.bombRig[key];
+      if (!rig) continue;
+      const pv = en.parts[key];
+      const ad = pv.userData.addons;
+      const on = en.group.visible && pv.parent === en.pivotRoot && pv.userData.bomb && ad && ad.bomb;
+      rig.chain.group.visible = !!on;
+      if (!on) continue;
+      rig.ring.getWorldPosition(a);
+      ad.bomb.userData.pinTip.getWorldPosition(b);
+      layChain(rig.chain, a, b);
+    }
+  }
+  // --- 死体 ---
+  for (const c of corpses) {
+    if (!c.bombRig) continue;
+    for (const key of ['LEFT', 'RIGHT']) {
+      const rig = c.bombRig[key];
+      if (!rig) continue;
+      const pv = c.armPivots[key];
+      const ad = pv && pv.userData.addons;
+      const on = pv && pv.parent && safeBomb(c.arms[key]) && ad && ad.bomb;
+      rig.chain.group.visible = !!on;
+      if (!on) continue;
+      rig.ring.getWorldPosition(a);
+      ad.bomb.userData.pinTip.getWorldPosition(b);
+      layChain(rig.chain, a, b);
+    }
+  }
+  // --- 自分 ---
+  const inRising = (state === S.RISE_IN || state === S.RISING || state === S.RISE_OUT);
+  for (const side of ['LEFT', 'RIGHT']) {
+    const st = player.arms[side];
+    const fp = playerBombRig.fp[side], body = playerBombRig.body[side];
+    const hand = fpHands[side];
+    const had = hand.userData.addons;
+    const fpOn = state === S.HUMAN && hand.visible && safeBomb(st) && had && had.bomb;
+    fp.group.visible = !!fpOn;
+    if (fpOn) {
+      had.bomb.userData.pinTip.getWorldPosition(a);
+      // 胸は画面の下の外。カメラ基準で、手の付け根より下・手前へ垂らす
+      // 胸は画面の下の外。端を画面の下端ちょうどに置いて、
+      // ピンから胸へ下りていくチェーンが手前に見えるようにする（たるませすぎると画面の外へ垂れる）
+      b.set((side === 'LEFT' ? -0.07 : 0.07), -0.34, -0.40)
+        .applyQuaternion(camera.quaternion).add(camera.position);
+      layChain(fp, a, b, 0.32);
+    }
+    const arm = (side === 'LEFT') ? playerArmL : playerArmR;
+    const bad = arm.userData.addons;
+    const ring = playerBombRig.ring[side];
+    ring.visible = inRising;
+    const bodyOn = inRising && playerGroup.visible && safeBomb(st) && bad && bad.bomb;
+    body.group.visible = !!bodyOn;
+    if (bodyOn) {
+      ring.getWorldPosition(a);
+      bad.bomb.userData.pinTip.getWorldPosition(b);
+      layChain(body, a, b);
+    }
+  }
+}
+
+// 敵の腕に爆弾を付ける（胸のリング・チェーンも一緒に）
+function addEnemyBomb(en, key) {
+  const pv = en.parts[key];
+  pv.userData.bomb = true;
+  pv.userData.bombState = { bomb: { armed: false } };
+  const side = (key === 'LEFT') ? 1 : -1;            // ローカル+X が左腕
+  syncArmAddons(pv, pv.userData.bombState, 'enemy', side);
+  const P = en.torso.geometry.parameters;
+  en.bombRig = en.bombRig || { LEFT: null, RIGHT: null };
+  const ring = makeNippleRing(en.torso, side * 0.24, P.height * 0.22, P.depth / 2 + 0.012);
+  en.bombRig[key] = { ring, chain: makeChain() };
+}
+
+// 敵（雑魚）の胴体を上裸の肌色にする（爆弾持ちの見た目）
+function makeEnemyBare(en) {
+  en.torsoColor = 0x8f6f62;
+  en.torso.material.color.setHex(en.torsoColor);
+  const P = en.torso.geometry.parameters;
+  for (const sx of [-1, 1]) {
+    if (en.bombRig && en.bombRig[sx > 0 ? 'LEFT' : 'RIGHT']) continue;   // リングがある側は付いている
+    const nip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.012, 10),
+      new THREE.MeshLambertMaterial({ color: 0x5a2c27 }));
+    nip.rotation.x = Math.PI / 2;
+    nip.position.set(sx * 0.24, P.height * 0.22 + 0.035, P.depth / 2 + 0.006);
+    en.torso.add(nip);
+  }
+}
+
+// 敵の胸のリングの位置（チェーンが張って抜けるときの起点）
+function enemyRingWorld(en, key, out) {
+  const rig = en.bombRig && en.bombRig[key];
+  if (rig) return rig.ring.getWorldPosition(out);
+  out.copy(en.group.position); out.y += 1.5;
+  return out;
+}
+
+function removeEnemyBombRig(en) {
+  if (!en.bombRig) return;
+  for (const key of ['LEFT', 'RIGHT']) if (en.bombRig[key]) removeChain(en.bombRig[key].chain);
+  en.bombRig = null;
+}
+
+function removeCorpseBombRig(c) {
+  if (!c.bombRig) return;
+  for (const key of ['LEFT', 'RIGHT']) if (c.bombRig[key]) removeChain(c.bombRig[key].chain);
+  c.bombRig = null;
+}
+
+// 爆弾まわりを全部片付ける（リセット）
+function clearBombFx() {
+  for (const s of bombSnaps) removeChain(s.chain);
+  bombSnaps = [];
+  for (const p of bombPins) scene.remove(p.obj);
+  bombPins = [];
+  for (const b of bombBlasts) { scene.remove(b.ball); scene.remove(b.ring); }
+  bombBlasts = [];
+}
+
+// 腕の見た目に付けた爆弾の stRef を付け替える（吸着の途中で腕の状態が複製されたとき）
+function setAddonState(obj, st) {
+  const ad = obj && obj.userData.addons;
+  if (ad && ad.bomb) ad.bomb.userData.stRef = st;
 }
 
 /* ---------- 画面投影 ---------- */
@@ -5418,10 +6931,20 @@ function walkableAt(x, z, headMode) {
   return false;
 }
 
+// 振り回した／投げた敵が壁に当たったか（デモの廊下は壁判定なし。検証室は部屋の壁）
+function throwBlocked(x, z) {
+  if (DEMO.active) return false;
+  if (LAB.active) {
+    return Math.abs(x - LAB.cx) > LAB.hw - 0.4 || Math.abs(z - LAB.cz) > LAB.hd - 0.4;
+  }
+  return !walkableAt(x, z, false);
+}
+
 // 壁ずり付き。斜めに壁へ入ったときは通れる軸だけ残す
 function confinePlayer(prevX, prevZ) {
   // デモステージは自分の矩形と門だけで閉じている（ハブの矩形とは繋がっていない）
   if (DEMO.active) { demoConfine(); return; }
+  if (LAB.active) { labConfine(); return; }
   const hm = (state === S.HEAD);
   if (walkableAt(playerPos.x, playerPos.z, hm)) return;
   if (walkableAt(playerPos.x, prevZ, hm)) { playerPos.z = prevZ; return; }
@@ -5728,6 +7251,7 @@ function resetBoss() {
   bossUi.scare.style.opacity = '0';
   if (bossMan) {
     const en = bossMan;
+    clearWeak(en);                     // 弱点の印は体ごと（新しい体には付いていない）
     bossClearEat(en);                  // 食べかけの腕は消す（床にも落とさない）
     en.hp = en.maxHp; en.stun = 0; en.shoveLeft = 0; en.consecutiveHits = 0;
     en.kickCd = 0; en.riseCd = 0; en.gunCd = 0; en.eatCd = 0; en.eatHealed = 0;
@@ -5908,6 +7432,7 @@ function bossLaunchHead(en, from) {
 
 // 体を死体にして本体を隠す。奪って付けていた腕は耐久ごと死体に残る（取り返せる）
 function bossLeaveBody(en) {
+  clearWeak(en);   // 体を捨てた。次のラウンドの体には印は無い
   const c = createCorpse(en.group.position.x, en.group.position.z, en.group.rotation.y,
     { enemyStyle: true, arms: armsFromEnemy(en), fuse: null });
   BOSS.spawned.push(c);
@@ -6296,11 +7821,15 @@ function bossArmCut(en) {
   mesh.position.copy(from);
   mesh.userData.kind = armState.kind;
   scene.add(mesh);
+  syncArmAddons(mesh, armState, 'loose', side === 'LEFT' ? -1 : 1);
+  // 爆弾付きの腕を奪われた：自分の胸から離れたのでピンが抜ける（男の手元で爆発する）
+  if (armState.bomb && !armState.bomb.armed) pullBombPin(armState, mesh, playerChestWorld(side, new THREE.Vector3()));
   // 奪った腕は同じ側に付ける（右手を取られたら男の右手になる）
   stolenArms.push({ obj: mesh, from: from.clone(), en, key: side, t: 0, mode, armState });
 
-  st.lost = true; st.hp = 0; st.purged = false;
+  st.lost = true; st.hp = 0; st.purged = false; st.wrist = null; st.bomb = null;
   gunHold[side] = false;
+  mouseHold[side] = null;
   if (player.attack && player.attack.side === side) player.attack = null;
   if (tentHold && tentHold.side === side) detachTentacle();
   updateArmVisuals();
@@ -6351,18 +7880,13 @@ function bossSetArm(en, key, armState) {
   }
   pivot.userData.kind = kind;
   pivot.userData.armState = armState ? cloneArmState(armState) : null;
+  if (pivot.userData.armState) syncArmAddons(pivot, pivot.userData.armState, 'enemy', key === 'LEFT' ? 1 : -1);
   en.pivotRoot.add(pivot);
   en.parts[key] = pivot;
   en.armMesh[key] = mesh;
   for (const t of targetEntries) if (t.enemy === en && t.key === key) t.pivot = pivot;
   // 奪って付けた腕の数だけ一撃が重くなる
-  let stolen = 0;
-  for (const k of ['LEFT', 'RIGHT']) {
-    const p = en.parts[k];
-    if (p.parent === en.pivotRoot && p.userData.armState) stolen++;
-  }
-  en.stolen = stolen;
-  en.bonusDamage = stolen * CONFIG.bossStolenArmDamage;
+  bossRecountArms(en);
 }
 
 // 付いている腕のうち、kind の腕が何本あるか
@@ -6396,6 +7920,7 @@ function bossHoldEatArm(en, armState) {
     new THREE.MeshBasicMaterial({ color: COLOR_FLESH }));
   bite.position.y = 0.4;
   mesh.add(bite);
+  syncArmAddons(mesh, armState, 'loose', 1);
   en.pivotRoot.add(mesh);
   en.eat = { mesh, armState, p: 0, healed: 0, started: false };
 }
@@ -6787,6 +8312,7 @@ function updateBoss(dt, rdt, wdt) {
 // [B]：アリーナ入口へ飛んでボス戦をやり直す
 function warpToBoss() {
   demoStop();
+  labStop();          // 検証室から B で来たときも、検証室の敵・台座・床の腕を片付けて出る
   resetBoss();
   clearArenaCorpses();
   state = S.HUMAN;
@@ -6942,6 +8468,8 @@ function demoSpawnEnemy(x, z, left, right) {
 // 敵を丸ごと消す。enemies の並びが ENEMY_SPOTS と1対1でないと
 // resetAll() が壊れるので、ハブへ戻る前に必ず全部これで消す
 function demoRemoveEnemy(en) {
+  clearWeak(en);
+  removeEnemyBombRig(en);
   scene.remove(en.group);
   const i = enemies.indexOf(en);
   if (i >= 0) enemies.splice(i, 1);
@@ -7048,9 +8576,164 @@ function updateDemo(wdt) {
   }
 }
 
+/* =========================================================
+   ギミック検証室（LAB・Tで入る）
+   手首アイテム（スキャナ）・弱点・爆弾腕を確かめるための部屋。
+   ハブ・デモ・ボス戦とは別の場所（霧で切れている）。
+   Tを押すたびに中身を全部作り直すので、何度でも同じ配置から試せる。
+   Gでリセットするとハブへ戻る。
+     手前   : スキャナの台座×2、交換用の腕（床）
+     左の区画: 雑魚1体            右の区画: 雑魚3体（まとめてスキャンする用）
+     中央   : 爆弾付き拳腕の敵／爆弾付き銃腕の敵
+     奥     : 強敵（弱点はスタン値2倍）
+   敵は自分の区画にプレイヤーが入ったときだけ追ってくる。
+   ========================================================= */
+const LAB = {
+  cx: -64, cz: 0, hw: 11, hd: 16,
+  active: false, built: false,
+  enemies: [],
+};
+// 区画（敵の部屋判定にそのまま使う）。中心からの相対
+const LAB_ZONES = {
+  single: { name: 'LAB 1', x0: -11, x1: -1, z0: -1, z1: 7, color: 0x1b2230 },
+  group:  { name: 'LAB 3', x0: 1, x1: 11, z0: -1, z1: 7, color: 0x1f2a24 },
+  bomb:   { name: 'LAB BOMB', x0: -11, x1: 11, z0: -9, z1: -2, color: 0x2a1c1c },
+  strong: { name: 'LAB STRONG', x0: -11, x1: 11, z0: -16, z1: -10, color: 0x2a2418 },
+};
+function labRect(z) {
+  return { name: z.name, x0: LAB.cx + z.x0, x1: LAB.cx + z.x1, z0: LAB.cz + z.z0, z1: LAB.cz + z.z1 };
+}
+
+function buildLabStage() {
+  if (LAB.built) return;
+  LAB.built = true;
+  const w = LAB.hw * 2, d = LAB.hd * 2;
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(w, d),
+    new THREE.MeshLambertMaterial({ color: 0x14171b }));
+  fl.rotation.x = -Math.PI / 2;
+  fl.position.set(LAB.cx, 0.004, LAB.cz);
+  scene.add(fl);
+  for (const key of Object.keys(LAB_ZONES)) {
+    const z = LAB_ZONES[key], r = labRect(z);
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(r.x1 - r.x0 - 0.2, r.z1 - r.z0 - 0.2),
+      new THREE.MeshLambertMaterial({ color: z.color }));
+    t.rotation.x = -Math.PI / 2;
+    t.position.set((r.x0 + r.x1) / 2, 0.012, (r.z0 + r.z1) / 2);
+    scene.add(t);
+  }
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0x2b323b });
+  const walls = [
+    [0.5, d, LAB.cx - LAB.hw, LAB.cz], [0.5, d, LAB.cx + LAB.hw, LAB.cz],
+    [w + 1, 0.5, LAB.cx, LAB.cz - LAB.hd], [w + 1, 0.5, LAB.cx, LAB.cz + LAB.hd],
+  ];
+  for (const [sx, sz, x, z] of walls) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, 3.2, sz), wallMat);
+    m.position.set(x, 1.6, z);
+    scene.add(m);
+  }
+}
+
+function labSpawnEnemy(zoneKey, x, z, left, right, opts) {
+  const o = opts || {};
+  const X = LAB.cx + x, Z = LAB.cz + z;
+  const en = createEnemy(X, Z, left, right);
+  en.lab = true;
+  en.room = labRect(LAB_ZONES[zoneKey]);
+  en.home = new THREE.Vector3(X, 0, Z);
+  en.group.rotation.y = 0;              // 手前（+Z）＝入口の方を向いて立つ
+  if (o.strong) {
+    en.strong = true;
+    en.maxHp = en.hp = CONFIG.strongHp;
+    en.torsoColor = 0x4a2f2a;
+    en.torso.material.color.setHex(en.torsoColor);
+    en.group.scale.setScalar(1.2);
+  }
+  if (o.bombs) {
+    for (const key of o.bombs) addEnemyBomb(en, key);
+    makeEnemyBare(en);
+  }
+  buildEnemyUi(en);
+  LAB.enemies.push(en);
+  return en;
+}
+
+// 交換用の腕を床に置く（寿命なし。□に合わせてライジングで取る）
+function labSpawnSpareArm(kind, x, z) {
+  const st = makeArmState(kind);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.72, 0.13),
+    new THREE.MeshLambertMaterial({ color: armColor(st) }));
+  m.position.set(LAB.cx + x, 0.12, LAB.cz + z);
+  m.rotation.set(0, Math.random() * Math.PI * 2, Math.PI / 2);
+  m.userData.kind = kind;
+  scene.add(m);
+  const el = document.createElement('div');
+  el.className = 'shoulder-target hidden';
+  document.body.appendChild(el);
+  severedParts.push({
+    obj: m, key: 'RIGHT', el, phase: 'grounded', armState: st,
+    vel: new THREE.Vector3(), spin: new THREE.Vector3(),
+    dropAt: 0, expireAt: null, baseColor: armColor(st), blinkPhase: 0, lab: true,
+  });
+}
+
+function startLab() {
+  resetAll();                    // ハブ・デモ・前回の検証室をまとめて片付ける
+  buildLabStage();
+  LAB.active = true;
+  // 敵
+  labSpawnEnemy('single', -6, 2.5, ARM.FIST, ARM.FIST);
+  labSpawnEnemy('group', 3.5, 2.5, ARM.FIST, ARM.FIST);
+  labSpawnEnemy('group', 6.0, 4.2, ARM.FIST, ARM.FIST);
+  labSpawnEnemy('group', 8.5, 2.5, ARM.FIST, ARM.FIST);
+  labSpawnEnemy('bomb', -5, -5.5, ARM.FIST, ARM.FIST, { bombs: ['LEFT'] });   // 爆弾付き拳腕
+  labSpawnEnemy('bomb', 5, -5.5, ARM.FIST, ARM.GUN, { bombs: ['RIGHT'] });    // 爆弾付き銃腕
+  labSpawnEnemy('strong', 0, -13, ARM.FIST, ARM.FIST, { strong: true });
+  // スキャナの台座と交換用の腕
+  spawnWristPickup('scanner', LAB.cx - 2.5, LAB.cz + 10, { owner: 'lab' });
+  spawnWristPickup('scanner', LAB.cx + 2.5, LAB.cz + 10, { owner: 'lab' });
+  labSpawnSpareArm(ARM.FIST, -8.0, 11.5);
+  labSpawnSpareArm(ARM.FIST, -7.0, 12.6);
+  labSpawnSpareArm(ARM.FIST, 7.0, 12.6);
+  labSpawnSpareArm(ARM.GUN, 8.0, 11.5);
+  playerPos.set(LAB.cx, 0, LAB.cz + LAB.hd - 2.5);
+  yaw = 0; pitch = 0;
+  showFeedback('GIMMICK LAB', '#7dffb0', 42);
+}
+
+function labStop() {
+  for (const en of LAB.enemies) if (enemies.indexOf(en) >= 0) demoRemoveEnemy(en);
+  LAB.enemies = [];
+  clearWristPickups('lab');
+  // 交換用の腕と、検証室の中に残った死体・腕も片付ける（ハブへ戻ったあとに残さない）
+  const inLab = (x, z) => Math.abs(x - LAB.cx) <= LAB.hw + 1 && Math.abs(z - LAB.cz) <= LAB.hd + 1;
+  for (const p of severedParts.slice()) {
+    if (p.lab || inLab(p.obj.position.x, p.obj.position.z)) removeSeveredPart(p, true);
+  }
+  for (const c of corpses.slice()) if (inLab(c.group.position.x, c.group.position.z)) removeCorpse(c);
+  LAB.active = false;
+}
+
+function labConfine() {
+  const m = 0.45;
+  playerPos.x = Math.max(LAB.cx - LAB.hw + m, Math.min(LAB.cx + LAB.hw - m, playerPos.x));
+  playerPos.z = Math.max(LAB.cz - LAB.hd + m, Math.min(LAB.cz + LAB.hd - m, playerPos.z));
+}
+
+function updateLab() {
+  if (!LAB.active) return;
+  // 倒れ切った敵は消す（死体は残る。□とバーのDOMを溜めない）
+  for (const en of LAB.enemies.slice()) {
+    if (en.state !== E.DEAD || en.fallT < 1) continue;
+    if (player.attack && player.attack.enemy === en) continue;
+    demoRemoveEnemy(en);
+    LAB.enemies.splice(LAB.enemies.indexOf(en), 1);
+  }
+}
+
 /* ---------- リセット ---------- */
 function resetAll() {
   demoStop();          // デモの敵を消してから。enemies の並びを ENEMY_SPOTS に戻す
+  labStop();           // 検証室の敵も同じ理由で先に消す
   player.hp = CONFIG.playerMaxHp;
   player.resMax = CONFIG.resourceStart;
   player.resource = player.resMax;
@@ -7060,6 +8743,10 @@ function resetAll() {
   player.skill = makeBodySkill();
   clearAsuraArms();
   clearHealFx();
+  clearScanRipples();
+  clearBombFx();
+  wristCool.LEFT = 0; wristCool.RIGHT = 0;
+  for (const en of enemies) clearWeak(en);
   player.gunRecoil.LEFT = 0; player.gunRecoil.RIGHT = 0;
   gunHold.LEFT = false; gunHold.RIGHT = false; gunCool.LEFT = 0; gunCool.RIGHT = 0;
   mouseHold.LEFT = null; mouseHold.RIGHT = null;
@@ -7263,6 +8950,10 @@ function aArm(side, kind, ext, o) {
     }
     s += '<circle cx="' + n1(hx + ux * len) + '" cy="' + n1(hy + uy * len) + '" r="4" fill="' +
          C_TENT_TIP + '"/>';
+  } else if (kind === 'purged') {
+    // 手首から先が無い（ぎざぎざの断面）
+    s += '<circle cx="' + n1(hx) + '" cy="' + n1(hy) + '" r="9" fill="' + C_FLESH +
+         '" stroke="#0b0d10" stroke-width="2"/>';
   } else {
     s += aRect(hx - 13, hy - 12, 26, 24, C_ARM, ' rx="4" stroke="#0b0d10" stroke-width="2"');
   }
@@ -7706,6 +9397,75 @@ const MANUAL_PAGES = [
     },
   },
 
+  /* --- 手首アイテム --- */
+  {
+    cat: '手首アイテム', title: '手首アイテムを付ける',
+    keys: [['左クリック', '長押しでパージ → 殴る'], ['右クリック', '長押しでパージ → 殴る']],
+    desc: 'パージして手首から先が無くなった腕で、台座のアイテムを殴ると手首に付く。左右どちらの腕でも付けられる。' +
+          'パージしていない腕・もう付いている腕では付かない。付けても腕のHPは変わらない（回復もしない）。',
+    art: () => aStage(
+      aRect(222, 118, 40, 54, '#343b44') + aRect(222, 114, 40, 5, '#3cff8a') +
+      '<path d="M232 104l10-4v-10l-10-4z" fill="#d6cbab" stroke="#0b0d10" stroke-width="2"/>' +
+      '<path d="M242 92l18-11v34l-18-11" fill="#d6cbab" stroke="#0b0d10" stroke-width="2"/>' +
+      aArm('L', 'fist', 0.1) + aArm('R', 'purged', 0.7, { hx: 214, hy: 104 }) +
+      aBurst(222, 100, 0.8, '#7dffb0') + aMouse(56, 52, 0.7, 'R')),
+  },
+  {
+    cat: '手首アイテム', title: 'スキャナ（スキャン）',
+    keys: [['クリック', '1回押すと1回スキャン']],
+    desc: '前方へ波紋を出す。波紋に触れた敵ぜんぶに弱点（赤い印）が付く。ダメージは無い。' +
+          '長押ししても連射・特殊攻撃・再パージは出ない。波紋が敵に触れると腕のHPが1回分減る（空振りは減らない）。' +
+          'スキャナにHPや回数は無く、腕のHPが0になると腕と一緒に壊れる。',
+    art: () => aStage(
+      aEnemy(118, 0.8, {}) + aEnemy(180, 0.85, {}) + aEnemy(244, 0.8, {}) +
+      '<circle cx="118" cy="128" r="7" fill="none" stroke="#ff2a1f" stroke-width="3"/>' +
+      '<circle cx="180" cy="108" r="7" fill="none" stroke="#ff2a1f" stroke-width="3"/>' +
+      '<circle cx="244" cy="139" r="7" fill="none" stroke="#ff2a1f" stroke-width="3"/>' +
+      aArc(250, 236, 70, -2.4, -1.35, '#7dffb0', 3) + aArc(250, 236, 105, -2.35, -1.4, '#7dffb0', 2) +
+      aArm('R', 'purged', 0.4) +
+      '<path d="M268 168l14-10 12 16-16 6z" fill="#d6cbab" stroke="#0b0d10" stroke-width="2"/>'),
+  },
+  {
+    cat: '手首アイテム', title: '弱点',
+    keys: [['攻撃', '赤い印に当てる']],
+    desc: '弱点の印は敵が死ぬまで消えない。もう一度スキャンしても増えないし、場所も変わらない。' +
+          '印そのものに攻撃を当てると、雑魚は即スタン、強敵とボスはスタン値が2倍になる。' +
+          '印の無いところに当てても普通のヒット。拳・パージした手首・銃・触手（薙ぎ払い／刺突）で狙える。',
+    art: () => aStage(
+      aEnemy(180, 1.1, {}) +
+      '<circle cx="180" cy="118" r="11" fill="none" stroke="#ff2a1f" stroke-width="4"/>' +
+      aLine(166, 118, 194, 118, '#ff2a1f', 3) + aLine(180, 104, 180, 132, '#ff2a1f', 3) +
+      aCross(180, 118, '#ffffff') + aArm('R', 'fist', 1) +
+      aText(180, 190, 'STUN', { size: 14, col: '#ffe98a' })),
+  },
+
+  /* --- 爆弾腕 --- */
+  {
+    cat: '爆弾腕', title: '爆弾腕',
+    keys: [['ライジング', '腕を斬って奪う']],
+    desc: '前腕に爆弾が付いた腕。爆弾の安全ピンは胸の乳首リングとチェーンでつながっている。' +
+          '腕が胴体から離れるとチェーンが張ってピンが抜け、赤いランプが点滅して少しあとに爆発する。' +
+          '爆弾付きの腕を斬って奪うと、自分の腕に付いてから爆発する。',
+    art: () => aStage(
+      aEnemy(180, 1.1, { armColor: '#b5493f' }) +
+      '<circle cx="167" cy="104" r="4" fill="none" stroke="#9aa0a8" stroke-width="2"/>' +
+      '<path d="M167 108q4 22 34 28" fill="none" stroke="#9aa0a8" stroke-width="2.5" stroke-dasharray="3 2"/>' +
+      aRect(198, 128, 14, 30, '#4b5a32') + aRect(198, 134, 14, 4, '#d8b02a') +
+      '<circle cx="205" cy="126" r="4" fill="#ff3b2a"/>'),
+  },
+  {
+    cat: '爆弾腕', title: 'ピンが抜けるとき／抜けないとき',
+    keys: [['交換', '抜ける'], ['乗っ取り・頭モード・パージ', '抜けない']],
+    desc: '抜ける：ライジングで斬って奪う／付けている爆弾腕を別の腕と交換する（弾き飛ばした腕が落ちた先で爆発する。離れていれば無傷）。' +
+          '抜けない：倒した敵の死体を乗っ取る（体と腕がつながったまま）／爆弾腕のまま頭モードへ／手首をパージする。' +
+          '腕のHPが0になったときは、爆弾も一緒に壊れて爆発しない。爆風は周りの敵も巻き込む。',
+    art: () => aStage(
+      aArm('L', 'fist', 0.1) +
+      aRect(232, 150, 14, 26, '#4b5a32') + '<circle cx="239" cy="148" r="4" fill="#ff3b2a"/>' +
+      '<circle cx="250" cy="150" r="34" fill="none" stroke="#ffa040" stroke-width="3" opacity="0.8"/>' +
+      aArrow(150, 150, 222, 160, C_HI, 3) + aEnemy(300, 0.7, { feet: 168 })),
+  },
+
   /* --- デバッグ --- */
   {
     cat: 'デバッグ', title: 'ボス戦へワープ',
@@ -7727,6 +9487,17 @@ const MANUAL_PAGES = [
       aEnemy(146, 0.62, { feet: 136 }) + aEnemy(212, 0.62, { feet: 136 }) +
       aText(180, 188, 'WAVE 1 / 5', { size: 13, col: C_HI }) +
       aKey(56, 44, 'V', true)),
+  },
+  {
+    cat: 'デバッグ', title: 'ギミック検証室へ',
+    keys: [['T', '']],
+    desc: 'スキャナの台座・雑魚（1体／3体）・爆弾付き拳腕と銃腕の敵・交換用の腕・強敵を置いた部屋へ飛ぶ。' +
+          'Tを押すたびに配置を最初から作り直す。Gでリセットするとハブへ戻る。',
+    art: () => aStage(
+      aRect(80, 60, 200, 110, '#1b2230', ' opacity="0.7"') +
+      aEnemy(130, 0.55, { feet: 112 }) + aEnemy(210, 0.5, { feet: 112 }) +
+      aEnemy(240, 0.5, { feet: 112 }) + aEnemy(180, 0.7, { feet: 160, armColor: '#b5493f' }) +
+      aKey(56, 44, 'T', true)),
   },
   {
     cat: 'デバッグ', title: '体スキルの切り替え',
@@ -7982,7 +9753,7 @@ signPrompt.innerHTML = '<span class="key">F</span>';
 document.body.appendChild(signPrompt);
 
 function signInRange() {
-  if (DEMO.active) return false;
+  if (DEMO.active || LAB.active) return false;
   // 看板は頭より高い位置にあるので、3D距離だと真下に立っても遠く出る。水平距離で見る
   return Math.hypot(playerPos.x - RACK.signWorld.x, playerPos.z - RACK.signWorld.z) <= RACK.signRange;
 }
@@ -8050,6 +9821,10 @@ function toggleObjective() {
 // 今の目的。goal は _objGoal を書き換えて返す（ゴールがない場面は null）
 function currentObjective() {
   const at = (x, z) => _objGoal.set(x, 0, z);
+  if (LAB.active) {
+    return { text: 'ギミック検証室：スキャナ・弱点・爆弾腕を試す（[T] で配置をやり直す / [G] でハブへ）',
+             goal: null };
+  }
   if (DEMO.active) {
     if (DEMO.phase === 'FIGHT') {
       return { text: '敵を全滅させて奥の門を開ける', goal: at(DEMO.cx, demoGateZ(DEMO.wave)) };
@@ -8182,6 +9957,7 @@ function animate() {
   updateGuard(rdt);
   for (const side of ['LEFT', 'RIGHT']) {
     if (gunCool[side] > 0) gunCool[side] -= rdt;
+    if (wristCool[side] > 0) wristCool[side] -= dt;
     if (player.gunRecoil[side] > 0) player.gunRecoil[side] = Math.max(0, player.gunRecoil[side] - rdt * 7);
   }
   if (state === S.HUMAN && locked() && player.hp > 0) {
@@ -8194,6 +9970,9 @@ function animate() {
         if (h.tent) {
           // 触手腕の長押しはパージではなく前方への刺突
           if (h.t >= CONFIG.tentHoldTime && startTentacleHold(side)) h.purged = true;
+        } else if (h.wrist) {
+          // 手首アイテムの再パージ（repurge:true のアイテムだけここへ来る）
+          if (h.t >= CONFIG.purgeHoldTime && doWristPurge(side)) h.purged = true;
         } else if (h.t >= CONFIG.purgeHoldTime && doPurge(side)) h.purged = true;
       }
       if (gunHold[side]) tryShoot(side);   // 長押しで連射（間隔は gunCool が見る）
@@ -8252,6 +10031,8 @@ function animate() {
       // resolvePunch() がフィニッシャーに差し替えた場合は、このパンチの硬直は見ない
       if (player.attack === atk) {
         const recover = atk.type === 'kick' ? CONFIG.kickRecover
+                      : atk.type === 'wrist'
+                        ? WRIST_ITEMS[atk.item].attack.active + WRIST_ITEMS[atk.item].attack.recover
                       : atk.tent ? CONFIG.tentSweepActive + CONFIG.tentSweepRecover
                                  : CONFIG.punchRecover;
         if (atk.t >= atk.startup + recover) player.attack = null;
@@ -8262,6 +10043,9 @@ function animate() {
   // 先行入力。攻撃の進行を進めたあとに見るので、
   // 振り抜きに達したフレームでそのまま次のパンチへ繋がる
   updatePunchBuffer(dt);
+
+  /* --- スキャンの波紋 --- */
+  updateScanRipples(wdt);
 
   /* --- 弾とパージ手首 ---
      判定は「今フレームで通った線分」と「敵の体の縦線分」の最短距離で見る。
@@ -8296,6 +10080,7 @@ function animate() {
     }
     if (hitEn) {
       p.dead = true;
+      p.prev = from; p.prevStep = step.length();   // 弱点の判定に使う（このフレームの通り道）
       // 当たった点まで戻す。血と肉片が出る位置を当たった場所に合わせる
       p.obj.position.copy(from).addScaledVector(step, hitT);
       if (hitEn.boss && hitEn.state === E.HIDDEN) {
@@ -8309,14 +10094,17 @@ function animate() {
       else {
         const en = hitEn;
         const attacking = (en.state === E.WINDUP || en.state === E.ACTIVE);
+        const weak = projWeakHit(p, en);
         applyDamage(en, CONFIG.attackDamage);
-        applyStun(en, CONFIG.attackStun);
+        if (weak && en.state !== E.DEAD) weakStrike(en, CONFIG.attackStun);
+        else applyStun(en, CONFIG.attackStun);
         if (attacking) { showFeedback('TRADE!', '#ffb45e', 30); addHitstop(CONFIG.hitstopTrade); }
         else {
           if (en.state !== E.STUNNED && en.state !== E.DEAD) enterHitReact(en);
           showFeedback(en.state === E.TETHER ? 'PINNED PURGE' : 'PURGE HIT', '#a8d8ff', 30);
           addHitstop(CONFIG.hitstopNormal);
         }
+        if (weak && en.state !== E.DEAD) weakFeedback();
         addShake(CONFIG.shakeNormal * 1.4);
         checkEnemyEscape(en);
       }
@@ -8342,11 +10130,17 @@ function animate() {
   /* --- 倒した敵の死体の爆発 --- */
   updateCorpseFuses(wdt);
 
+  /* --- 爆弾腕の秒読みと爆発（死体の爆発とは別の仕組み）--- */
+  updateBombs(wdt);
+  updateBombSnaps(rdt);
+  updateBombBlasts(rdt);
+
   /* --- ボス戦（ダクトの男）--- */
   updateBoss(dt, rdt, wdt);
 
   /* --- デモステージのウェーブ --- */
   updateDemo(wdt);
+  updateLab();
 
   /* --- プレイヤー見た目 --- */
   const inRising = (state === S.RISE_IN || state === S.RISING || state === S.RISE_OUT);
@@ -8588,11 +10382,19 @@ function animate() {
       punchOut = swingCurve(a.t, a.startup + CONFIG.punchActive,
                             a.startup + CONFIG.punchRecover) * 0.75;
     }
+    let wristTilt = 0;
+    if (player.attack && player.attack.type === 'wrist' && player.attack.side === side) {
+      const pose = WRIST_ITEMS[player.attack.item].attackPose(player.attack);
+      punchOut = pose.out; wristTilt = pose.tilt;
+    }
     const local = new THREE.Vector3(sign * 0.28, -0.28, -0.35 - punchOut + recoil * CONFIG.gunRecoil);
     hand.position.copy(local.applyQuaternion(camera.quaternion)).add(camera.position);
     hand.quaternion.copy(camera.quaternion);
-    hand.rotateX(-0.12 + punchOut * 0.2 + recoil * 0.35);
+    hand.rotateX(-0.12 + punchOut * 0.2 + recoil * 0.35 + wristTilt);
     hand.userData.fist.scale.setScalar(1);
+    // 手首アイテムのアイドル（画面のちらつき等）
+    const had = hand.userData.addons;
+    if (had && had.wrist) WRIST_ITEMS[had.wristId].idle(had.wrist, clock.elapsedTime, player.arms[side]);
     applyGuardPose(hand, side);
 
     // --- フィニッシャー ---
@@ -8630,6 +10432,11 @@ function animate() {
   }
   /* --- 触手腕の見た目（アイドルのうねり／薙ぎ払い／伸ばした触手）--- */
   updateTentacleArms(rdt);
+  /* --- 爆弾のランプ・チェーン、弱点の印、置いてある手首アイテム --- */
+  updateBombVisuals(rdt);
+  updateBombChains();
+  updateWeakMarkers(rdt);
+  updateWristPickups(rdt);
   /* --- 体スキル（阿修羅の追加の腕／回復の粒）--- */
   updateAsuraArms(dt, rdt);
   updateHealFx(rdt);
@@ -8693,7 +10500,7 @@ function animate() {
   const room = currentRoom();
   ui.room.textContent = DEMO.active
     ? 'DEMO ' + (DEMO.phase === 'CLEAR' ? 'CLEAR' : 'W' + (Math.max(0, DEMO.wave) + 1))
-    : (room ? room.name : 'HUB');
+    : LAB.active ? 'LAB' : (room ? room.name : 'HUB');
   const airborne = severedParts.filter((p) => p.phase === 'drift' || p.phase === 'eject').length;
   const grounded = severedParts.filter((p) => p.phase === 'grounded').length;
   ui.arms.textContent = airborne + ' air / ' + grounded + ' ground / ' +
