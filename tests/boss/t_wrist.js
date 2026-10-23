@@ -96,7 +96,8 @@ const { setup } = require('./bt');
   await ev(() => { player.arms.LEFT = makeArmState(ARM.FIST); updateArmVisuals(); });
   await o.lookAt(await o.weakPos(0));
   const wh0 = await ev(() => weakStats.hits);
-  await o.ready(); await o.click('left'); await wait(250);
+  await o.ready(); await o.click('left');
+  await o.waitFor(() => LAB.enemies[0].state === E.STUNNED || LAB.enemies[0].hp < 100, 4000); await wait(100);
   o.expect('一発でスタン', await ev(() => LAB.enemies[0].state), 'STUNNED');
   o.expect('弱点ヒットとして数えた', await ev(() => weakStats.hits) - wh0, 1);
 
@@ -107,7 +108,8 @@ const { setup } = require('./bt');
     const head = en.weak.spot === 'head'; return { x: v.x + 0.0, y: head ? v.y - 0.95 : v.y + (en.weak.spot === 'chest' ? 0.75 : 1.1), z: v.z }; });
   await o.lookAt(off);
   const wh1 = await ev(() => weakStats.hits);
-  await o.ready(); await o.click('left'); await wait(250);
+  await o.ready(); await o.click('left');
+  await o.waitFor(() => LAB.enemies[1].hp < 100, 4000); await wait(100);
   o.expect('スタンしない（普通のヒット）', await ev(() => LAB.enemies[1].state !== 'STUNNED'), true);
   o.expect('弱点ヒットに数えない', await ev(() => weakStats.hits) - wh1, 0);
   o.expect('ダメージは入った（当たってはいる）', await ev(() => LAB.enemies[1].hp < 100), true);
@@ -130,7 +132,8 @@ const { setup } = require('./bt');
     await ev(() => { const en = LAB.enemies[6]; en.group.position.set(LAB.cx, 0, LAB.cz - 13); en.group.rotation.y = 0; setEnemyState(en, E.IDLE); en.stun = 0; en.cooldown = 99; playerPos.set(LAB.cx, 0, LAB.cz - 11.1); });
     const w = await o.weakPos(6);
     await o.lookAt(weak ? w : { x: w.x + 0.0, y: w.y + 0.85, z: w.z });
-    await o.ready(); await o.click('left'); await wait(150);
+    await o.ready(); await o.click('left');
+    await o.waitFor(() => LAB.enemies[6].stun > 0, 4000);   // パンチが当たるまで（遅いマシンでも取りこぼさない）
     const st = await ev(() => LAB.enemies[6].stun);
     await wait(500);
     return st;
@@ -153,7 +156,8 @@ const { setup } = require('./bt');
       playerPos.set(en.group.position.x, 0, en.group.position.z + 1.9); });
     const w = await ev(() => { const v = new THREE.Vector3(); weakWorld(bossMan, v); return { x: v.x, y: v.y, z: v.z }; });
     await o.lookAt(weak ? w : { x: w.x, y: w.y + 0.9, z: w.z });
-    await o.ready(); await o.click('left'); await wait(150);
+    await o.ready(); await o.click('left');
+    await o.waitFor(() => bossMan.stun > 0, 4000);
     const st = await ev(() => bossMan.stun);
     await wait(400);
     return st;
@@ -184,9 +188,15 @@ const { setup } = require('./bt');
 
   o.section('A12：交換・頭モード・乗っ取りでも装着状態とHPが壊れない');
   // 交換：左のスキャナ腕を床の腕と交換して外す
-  await standAt(-6.5, 12.2, Math.PI / 2 + 0.6, -0.5);
+  // 床の腕から 2.4m 離れて見下ろす（近すぎると□の狙いが行き過ぎる）
+  await ev(() => {
+    const p = severedParts.find((q) => q.lab && q.armState.kind === 'fist' && q.obj.position.x < LAB.cx);
+    p.el.id = 'spare';
+    const t = p.obj.position;
+    playerPos.set(t.x + 2.4, 0, t.z - 0.6);
+    yaw = Math.atan2(-(t.x - playerPos.x), -(t.z - playerPos.z)); pitch = -0.55;
+  });
   await o.rise();
-  await ev(() => { const p = severedParts.find((q) => q.lab && q.armState.kind === 'fist'); p.el.id = 'spare'; });
   o.expect('床の腕を狙えた', await o.aimAtEl('#spare'), true);
   await o.ready(); await o.click('left'); await wait(300);
   await page.keyboard.up('KeyQ');

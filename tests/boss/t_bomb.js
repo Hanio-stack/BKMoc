@@ -24,6 +24,16 @@ const { setup } = require('./bt');
     return ok;
   };
   await fresh();
+  // 交換用の腕（床）から 2.4m 離れて、その腕を見下ろす。近すぎると□の狙いが行き過ぎる
+  const faceSpare = (right) => ev((right) => {
+    const p = severedParts.find((q) => q.lab && q.armState.kind === 'fist' && (right ? q.obj.position.x > LAB.cx : q.obj.position.x < LAB.cx));
+    p.el.id = right ? 'spareR' : 'spareL';
+    const t = p.obj.position;
+    playerPos.set(t.x + (right ? -2.4 : 2.4), 0, t.z - 0.6);
+    const dx = t.x - playerPos.x, dz = t.z - playerPos.z;
+    yaw = Math.atan2(-dx, -dz); pitch = -0.55;
+    return p.el.id;
+  }, right);
 
   o.section('C1/C2：爆弾は腕の種類と別。拳腕・銃腕・触手腕に付く。チェーンとピンが見える');
   o.expect('爆弾付き拳腕の敵（左）・爆弾付き銃腕の敵（右）', await ev(() => [
@@ -87,11 +97,11 @@ const { setup } = require('./bt');
 
   o.section('C7〜C9：別の腕と交換すると、捨てた爆弾腕が落ちた先で爆発する。離れれば無傷、敵は巻き込む');
   const s2 = await stats();
-  await ev(() => { playerPos.set(LAB.cx - 6.5, 0, LAB.cz + 12.2); yaw = Math.PI / 2 + 0.6; pitch = -0.5; player.hp = 100; });
+  await ev(() => { player.hp = 100; });
+  await faceSpare(false);
   await o.ready();
   await o.rise();
-  await ev(() => { const p = severedParts.find((q) => q.lab && q.armState.kind === 'fist'); p.el.id = 'spare'; });
-  o.expect('交換用の腕を狙えた', await o.aimAtEl('#spare'), true);
+  o.expect('交換用の腕を狙えた', await o.aimAtEl('#spareL'), true);
   await o.click('left'); await wait(200);
   await page.keyboard.up('KeyQ');
   await o.waitFor((n) => bombStats.pulls > n, 3000, s2.pulls);
@@ -156,11 +166,10 @@ const { setup } = require('./bt');
   o.expect('スキャンできる', (await ev(() => scanStats.scans)) - sc0, 1);
   o.expect('スキャンでピンは抜けない', await stats(), s4);
   // 交換すると、スキャナ付きの爆弾腕でもピンが抜けて爆発する
-  await ev(() => { playerPos.set(LAB.cx + 6.5, 0, LAB.cz + 12.2); yaw = -(Math.PI / 2 + 0.6); pitch = -0.5; });
+  await faceSpare(true);
   await o.ready();
   await o.rise();
-  await ev(() => { const p = severedParts.find((q) => q.lab && q.armState.kind === 'fist' && q.obj.position.x > LAB.cx); p.el.id = 'spare2'; });
-  o.expect('交換用の腕を狙えた', await o.aimAtEl('#spare2'), true);
+  o.expect('交換用の腕を狙えた', await o.aimAtEl('#spareR'), true);
   await o.click('left'); await wait(200);
   await page.keyboard.up('KeyQ');
   await o.waitFor(() => severedParts.some((q) => q.armState && q.armState.wrist && q.armState.bomb), 3000);

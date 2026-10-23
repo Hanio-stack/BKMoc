@@ -71,7 +71,8 @@ async function setup(opts) {
   };
   // □（要素）が画面中央に来て選ばれるまで視点を合わせる
   o.aimAtEl = async (sel) => {
-    for (let i = 0; i < 30; i++) {
+    // 遅いマシンでは□の位置が数フレーム遅れて更新されるので、毎回2フレーム描かせてから見直す
+    for (let i = 0; i < 70; i++) {
       const r = await o.ev((sel) => {
         const el = document.querySelector(sel);
         if (!el || el.classList.contains('hidden')) return null;
@@ -81,7 +82,7 @@ async function setup(opts) {
       const dx = r.x - 640, dy = r.y - 360;
       if (Math.hypot(dx, dy) < 12 && r.sel) return true;
       await o.ev(([dx, dy]) => { yaw -= dx * 0.0016; pitch -= dy * 0.0016; }, [dx, dy]);
-      await o.wait(90);
+      await o.ev(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     }
     return false;
   };

@@ -696,7 +696,7 @@ const CONFIG = {
   bombDamagePlayer: 30,
   bombDamageEnemy: 45,
   bombStunEnemy: 60,
-  bombChainSnapTime: 0.16,     // チェーンが張ってからピンが抜けるまで(s・実時間)
+  bombChainSnapTime: 0.28,     // チェーンが張ってからピンが抜けるまで(s・実時間)。秒読みはピンが抜けてから
   bombChainLinks: 16,          // チェーンの輪の数
   bombChainSlack: 1.0,         // この長さより近いとチェーンがたるむ(m)
 
@@ -6253,8 +6253,10 @@ function explodeBomb(pos, opts) {
   bombStats.blasts++;
   bombStats.last = { pos: at.clone(), attached: !!o.attached, t: worldTime };
   // 火の玉と床の焦げ
+  // 自分の腕に付いたまま爆発するとカメラが火の玉の内側に入るので、裏面も描く
   const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), new THREE.MeshBasicMaterial({
-    color: 0xffa040, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+    color: 0xffa040, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending }));
   ball.position.copy(at);
   scene.add(ball);
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.7, 1.0, 40), new THREE.MeshBasicMaterial({
@@ -6452,8 +6454,14 @@ function updateBombVisuals(rdt) {
 }
 
 /* ---------- 胸とつながったチェーン（ピンが刺さっている間だけ）---------- */
+// 一人称のチェーンはカメラのすぐ前に来るので、細く・輪を多くする
+function makeFpChain() {
+  const ch = makeChain(24);
+  for (const m of ch.links) m.scale.setScalar(0.5);
+  return ch;
+}
 const playerBombRig = {
-  fp: { LEFT: makeChain(), RIGHT: makeChain() },
+  fp: { LEFT: makeFpChain(), RIGHT: makeFpChain() },
   body: { LEFT: makeChain(), RIGHT: makeChain() },
   ring: { LEFT: null, RIGHT: null },
 };
@@ -6520,9 +6528,11 @@ function updateBombChains() {
     if (fpOn) {
       had.bomb.userData.pinTip.getWorldPosition(a);
       // 胸は画面の下の外。カメラ基準で、手の付け根より下・手前へ垂らす
-      b.set((side === 'LEFT' ? -0.12 : 0.12), -0.78, -0.10)
+      // 胸は画面の下の外。端を画面の下端ちょうどに置いて、
+      // ピンから胸へ下りていくチェーンが手前に見えるようにする（たるませすぎると画面の外へ垂れる）
+      b.set((side === 'LEFT' ? -0.07 : 0.07), -0.34, -0.40)
         .applyQuaternion(camera.quaternion).add(camera.position);
-      layChain(fp, a, b, 0.9);
+      layChain(fp, a, b, 0.32);
     }
     const arm = (side === 'LEFT') ? playerArmL : playerArmR;
     const bad = arm.userData.addons;
