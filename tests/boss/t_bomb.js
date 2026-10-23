@@ -153,7 +153,7 @@ const { setup } = require('./bt');
 
   o.section('C12/C13：手首をパージしても爆発しない。スキャナ付きの爆弾腕も正しく動く');
   await o.ready();
-  await o.hold('left', 450); await wait(500);
+  await o.hold('left', 700); await wait(500);
   o.expect('パージした（爆弾は付いたまま安全）', [(await arm('LEFT')).purged, (await arm('LEFT')).bomb], [true, { armed: false }]);
   o.expect('ピンは抜けていない', await stats(), s4);
   await ev(() => { playerPos.set(LAB.cx - 2.5, 0, LAB.cz + 11.7); yaw = 0; pitch = -0.3; });

@@ -44,6 +44,12 @@ async function setup(opts) {
     const orig = setEnemyState;
     setEnemyState = function (en, s) { if (en.boss) window.__bossStates.push(s); return orig(en, s); };
   });
+  // 検証室の敵を、入った時点の並びで覚えておく（__L）。倒れた敵は LAB.enemies から抜けて
+  // 添字がずれるので、テストは __L[i] で同じ敵を指す
+  await o.ev(() => {
+    const orig = startLab;
+    startLab = function () { orig(); window.__L = LAB.enemies.slice(); };
+  });
   o.clearStates = () => o.ev(() => { window.__bossStates = []; });
   o.states = () => o.ev(() => window.__bossStates.slice());
 
@@ -119,14 +125,15 @@ async function setup(opts) {
   }, p);
   // 敵の弱点の印のワールド座標
   o.weakPos = (i) => o.ev((i) => {
-    const en = LAB.enemies[i];
+    const en = (window.__L || LAB.enemies)[i];
     const v = new THREE.Vector3();
     weakWorld(en, v);
     return { x: v.x, y: v.y, z: v.z };
   }, i);
   // 次の行動が出せるまで待つ（攻撃の途中・ヒットストップ・手首アイテムのクールダウン）
   o.ready = () => o.waitFor(() => canCancelNow() && hitstop <= 0 &&
-    wristCool.LEFT <= 0 && wristCool.RIGHT <= 0 && !player.attack, 4000);
+    wristCool.LEFT <= 0 && wristCool.RIGHT <= 0 && gunCool.LEFT <= 0 && gunCool.RIGHT <= 0 &&
+    !player.attack, 4000);
   // Qを押してライジングに入り切るまで待つ
   o.rise = async () => {
     await page.keyboard.down('KeyQ');
