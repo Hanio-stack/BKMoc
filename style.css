@@ -249,6 +249,27 @@ canvas { display: block; }
 .hp-circle.purged > .fill { background: #6f7a70; }
 .hp-circle.lost { border-style: dashed; border-color: rgba(255, 255, 255, 0.12); }
 .hp-circle.lost > .icon { color: #ff8f7a; }
+/* 手首アイテム（スキャナ）を付けた腕：画面の緑 */
+.hp-circle.wrist > .fill { background: #5fae7c; }
+/* 爆弾腕：丸の上にランプ。ピンが抜けたら赤く速く点滅する */
+.hp-circle.bomb::after {
+  content: ''; position: absolute;
+  top: 6%; left: 50%; width: 16%; height: 16%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #5a1712;
+  border: 2px solid rgba(20, 20, 20, 0.9);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+.hp-circle.bomb.armed::after {
+  background: #ff3b2a;
+  box-shadow: 0 0 10px #ff3b2a;
+  animation: bombLamp 0.22s steps(2, jump-none) infinite;
+}
+@keyframes bombLamp {
+  0%   { background: #ff3b2a; box-shadow: 0 0 12px #ff3b2a; }
+  100% { background: #5a1712; box-shadow: none; }
+}
 
 
 /* ---- 体スキル：使えるあいだ体の丸の縁が光る（OWのウルトのイメージ）----
