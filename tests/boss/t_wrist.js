@@ -18,8 +18,8 @@ const { setup } = require('./bt');
   await ev(() => { const r = Math.random; window.__rand = r; CONFIG.enemyDodgeChance = 0; CONFIG.enemyDodgeForceHits = 999; });
 
   o.section('A1：左右それぞれパージできる');
-  await o.ready(); await o.hold('left', 450); await wait(300);
-  await o.ready(); await o.hold('right', 450); await wait(300);
+  await o.ready(); await o.hold('left', 700); await wait(300);
+  await o.ready(); await o.hold('right', 700); await wait(300);
   o.expect('左右ともパージ済み', [(await arm('LEFT')).purged, (await arm('RIGHT')).purged], [true, true]);
 
   o.section('A2：パージしていない腕ではスキャナを取れない');
@@ -32,7 +32,7 @@ const { setup } = require('./bt');
 
   o.section('A3：パージした腕で殴ると手首に付く');
   await ev(() => { player.arms.RIGHT.hp = 64; });
-  await o.ready(); await o.hold('right', 450); await wait(400);
+  await o.ready(); await o.hold('right', 700); await wait(400);
   o.expect('右腕がパージ済み', (await arm('RIGHT')).purged, true);
   await standAt(2.5, 11.7, 0, -0.3);
   await o.ready(); await o.click('right'); await wait(500);
@@ -47,17 +47,17 @@ const { setup } = require('./bt');
   o.section('A4/B1：クリック1回でスキャン1回、パンチは出ない');
   await standAt(6, 9, 0, -0.05);
   await wait(300);
-  const s0 = await ev(() => ({ scans: scanStats.scans, hp: LAB.enemies.map((e) => e.hp) }));
+  const s0 = await ev(() => ({ scans: scanStats.scans, hp: __L.map((e) => e.hp) }));
   await o.ready(); await o.click('right');
   o.expect('攻撃はスキャン（パンチではない）', await ev(() => player.attack && player.attack.type), 'wrist');
   await o.waitFor((n) => scanStats.scans > n && !scanRipples.length, 8000, s0.scans);
-  const s1 = await ev(() => ({ scans: scanStats.scans, hp: LAB.enemies.map((e) => e.hp) }));
+  const s1 = await ev(() => ({ scans: scanStats.scans, hp: __L.map((e) => e.hp) }));
   o.expect('スキャンは1回', s1.scans - s0.scans, 1);
   o.expect('B3：波紋にダメージは無い（敵のHPは減らない）', s1.hp, s0.hp);
-  o.expect('B4：3体に弱点が付いた', await ev(() => LAB.enemies.slice(1, 4).map((e) => !!e.weak)), [true, true, true]);
-  o.expect('範囲外の敵には付かない（左の1体・爆弾・強敵）', await ev(() => [0, 4, 5, 6].map((i) => !!LAB.enemies[i].weak)), [false, false, false, false]);
+  o.expect('B4：3体に弱点が付いた', await ev(() => __L.slice(1, 4).map((e) => !!e.weak)), [true, true, true]);
+  o.expect('範囲外の敵には付かない（左の1体・爆弾・強敵）', await ev(() => [0, 4, 5, 6].map((i) => !!__L[i].weak)), [false, false, false, false]);
   o.expect('A8：3体に当たっても腕HPは1回分だけ減る', (await arm('RIGHT')).hp, 64 - await ev(() => CONFIG.scanHitCost));
-  o.expect('B5：印は敵の体（頭か胴）に付いている', await ev(() => LAB.enemies.slice(1, 4).every((e) =>
+  o.expect('B5：印は敵の体（頭か胴）に付いている', await ev(() => __L.slice(1, 4).every((e) =>
     e.weak.marker.parent === e.head || e.weak.marker.parent === e.torso)), true);
   await page.screenshot({ path: __dirname + '/shots/wrist_marks.png' });
 
@@ -73,12 +73,12 @@ const { setup } = require('./bt');
   o.expect('再スキャンでも敵に触れれば腕HPは減る', hpAfterRe, 64 - 2 * await ev(() => CONFIG.scanHitCost));
 
   o.section('B6/B7：再スキャンしても印は増えず、場所も変わらない。時間で消えない');
-  const spots = await ev(() => LAB.enemies.slice(1, 4).map((e) => e.weak.spot + ':' + e.weak.marker.uuid));
+  const spots = await ev(() => __L.slice(1, 4).map((e) => e.weak.spot + ':' + e.weak.marker.uuid));
   await scan('right');
-  o.expect('印は同じもの（増えない・場所も同じ）', await ev(() => LAB.enemies.slice(1, 4).map((e) => e.weak.spot + ':' + e.weak.marker.uuid)), spots);
-  o.expect('印の数は1体1つ', await ev(() => LAB.enemies.slice(1, 4).map((e) => { let n = 0; e.group.traverse((x) => { if (x.isSprite) n++; }); return n; })), [1, 1, 1]);
+  o.expect('印は同じもの（増えない・場所も同じ）', await ev(() => __L.slice(1, 4).map((e) => e.weak.spot + ':' + e.weak.marker.uuid)), spots);
+  o.expect('印の数は1体1つ', await ev(() => __L.slice(1, 4).map((e) => { let n = 0; e.group.traverse((x) => { if (x.isSprite) n++; }); return n; })), [1, 1, 1]);
   await wait(4000);
-  o.expect('4秒たっても消えない', await ev(() => LAB.enemies.slice(1, 4).every((e) => !!e.weak)), true);
+  o.expect('4秒たっても消えない', await ev(() => __L.slice(1, 4).every((e) => !!e.weak)), true);
 
   o.section('A9：空振りでは腕HPが減らない');
   const hpW0 = (await arm('RIGHT')).hp;
@@ -87,54 +87,76 @@ const { setup } = require('./bt');
   await scan('right');
   o.expect('敵に触れなければ減らない', (await arm('RIGHT')).hp, hpW0);
 
-  o.section('B8：弱点に当てると雑魚は即スタン');
+  o.section('B8：弱点に当てると雑魚は一撃で死ぬ（拳）');
   // 左の1体をスキャンしてから、印を狙って左手（拳）で殴る
   await standAt(-6, 8.5, 0, -0.05); await wait(300);
   await scan('right');
-  o.expect('左の1体に印', await ev(() => !!LAB.enemies[0].weak), true);
-  await ev(() => { const en = LAB.enemies[0]; en.group.position.set(LAB.cx - 6, 0, LAB.cz + 4.4); en.group.rotation.y = 0; playerPos.set(LAB.cx - 6, 0, LAB.cz + 6.2); setEnemyState(en, E.IDLE); en.stun = 0; });
+  o.expect('左の1体に印', await ev(() => !!__L[0].weak), true);
+  await ev(() => { const en = __L[0]; en.group.position.set(LAB.cx - 6, 0, LAB.cz + 4.4); en.group.rotation.y = 0; playerPos.set(LAB.cx - 6, 0, LAB.cz + 6.2); setEnemyState(en, E.IDLE); en.stun = 0; });
   await ev(() => { player.arms.LEFT = makeArmState(ARM.FIST); updateArmVisuals(); });
   await o.lookAt(await o.weakPos(0));
   const wh0 = await ev(() => weakStats.hits);
   await o.ready(); await o.click('left');
-  await o.waitFor(() => LAB.enemies[0].state === E.STUNNED || LAB.enemies[0].hp < 100, 4000); await wait(100);
-  o.expect('一発でスタン', await ev(() => LAB.enemies[0].state), 'STUNNED');
+  await o.waitFor(() => __L[0].hp < 100, 4000); await wait(100);
+  o.expect('一撃で死んだ', await ev(() => ({ state: __L[0].state, hp: __L[0].hp })), { state: 'DEAD', hp: 0 });
+  o.expect('倒れた敵の印は消えた', await ev(() => __L[0].weak), null);
   o.expect('弱点ヒットとして数えた', await ev(() => weakStats.hits) - wh0, 1);
 
   o.section('B10：弱点以外に当てても弱点の効果は出ない');
-  await ev(() => { const en = LAB.enemies[1]; en.group.position.set(LAB.cx + 3.5, 0, LAB.cz + 4.4); en.group.rotation.y = 0; playerPos.set(LAB.cx + 3.5, 0, LAB.cz + 6.2); setEnemyState(en, E.IDLE); en.stun = 0; });
+  await ev(() => { const en = __L[1]; en.group.position.set(LAB.cx + 3.5, 0, LAB.cz + 4.4); en.group.rotation.y = 0; playerPos.set(LAB.cx + 3.5, 0, LAB.cz + 6.2); setEnemyState(en, E.IDLE); en.stun = 0; });
   // 印から 0.6m 以上ずれた所（印が頭なら腹、胴なら頭）を狙う
-  const off = await ev(() => { const en = LAB.enemies[1]; const v = new THREE.Vector3(); weakWorld(en, v);
+  const off = await ev(() => { const en = __L[1]; const v = new THREE.Vector3(); weakWorld(en, v);
     const head = en.weak.spot === 'head'; return { x: v.x + 0.0, y: head ? v.y - 0.95 : v.y + (en.weak.spot === 'chest' ? 0.75 : 1.1), z: v.z }; });
   await o.lookAt(off);
   const wh1 = await ev(() => weakStats.hits);
   await o.ready(); await o.click('left');
-  await o.waitFor(() => LAB.enemies[1].hp < 100, 4000); await wait(100);
-  o.expect('スタンしない（普通のヒット）', await ev(() => LAB.enemies[1].state !== 'STUNNED'), true);
+  await o.waitFor(() => __L[1].hp < 100, 4000); await wait(100);
+  o.expect('死なない・スタンもしない（普通のヒット）', await ev(() => __L[1].state !== 'DEAD' && __L[1].state !== 'STUNNED'), true);
   o.expect('弱点ヒットに数えない', await ev(() => weakStats.hits) - wh1, 0);
-  o.expect('ダメージは入った（当たってはいる）', await ev(() => LAB.enemies[1].hp < 100), true);
+  o.expect('ダメージは入った（当たってはいる）', await ev(() => __L[1].hp < 100), true);
 
-  o.section('共通処理：銃弾・刺突・パージした手首でも弱点が効く');
-  // 銃：左腕を銃にして印を撃つ
-  await ev(() => { const en = LAB.enemies[2]; en.group.position.set(LAB.cx + 6, 0, LAB.cz + 2.5); en.group.rotation.y = 0; setEnemyState(en, E.IDLE); en.stun = 0; playerPos.set(LAB.cx + 6, 0, LAB.cz + 8); player.arms.LEFT = makeArmState(ARM.GUN); updateArmVisuals(); });
+  o.section('銃：弱点を撃つと雑魚は一撃で死ぬ（近く・遠く）／弱点を外せば死なない');
+  // その場に立たせておく（区画の外にいることにして、家＝今の位置に留まる）
+  const pin = (i, x, z) => ev(([i, x, z]) => { const en = __L[i]; en.group.position.set(LAB.cx + x, 0, LAB.cz + z); en.group.rotation.y = 0;
+    setEnemyState(en, E.IDLE); en.stun = 0; en.cooldown = 99; en.room = { x0: 9e9, x1: 9e9, z0: 9e9, z1: 9e9 }; en.home.copy(en.group.position); }, [i, x, z]);
+  await ev(() => { player.arms.LEFT = makeArmState(ARM.GUN); updateArmVisuals(); });
+  // 外す：印から 0.8m 上（または下）を撃つ
+  await pin(2, 6, 2.5);
+  await ev(() => { playerPos.set(LAB.cx + 6, 0, LAB.cz + 8); });
+  const w2 = await o.weakPos(2);
+  await o.lookAt({ x: w2.x, y: w2.y + (await ev(() => __L[2].weak.spot === 'head' ? -0.9 : 0.8)), z: w2.z });
+  const gm0 = await ev(() => weakStats.hits);
+  await o.ready(); await o.click('left');
+  await o.waitFor(() => __L[2].hp < 100, 4000); await wait(100);
+  o.expect('弱点を外した弾は普通のダメージだけ（死なない）', await ev(() => ({ state: __L[2].state, hp: __L[2].hp })), { state: 'IDLE', hp: 90 });
+  o.expect('弱点ヒットに数えない', (await ev(() => weakStats.hits)) - gm0, 0);
+  // 近く（5.5m）から印を撃つ
   await o.lookAt(await o.weakPos(2));
-  await o.ready(); await o.click('left'); await wait(400);
-  o.expect('銃弾が弱点に当たって即スタン', await ev(() => LAB.enemies[2].state), 'STUNNED');
+  await o.ready(); await o.click('left');
+  await o.waitFor(() => __L[2].hp < 90, 4000); await wait(100);
+  o.expect('5.5m：銃弾が弱点に当たって一撃で死ぬ', await ev(() => __L[2].state), 'DEAD');
+  // 遠く（10m）から印を撃つ
+  await pin(1, 3.5, 2.5);
+  await ev(() => { playerPos.set(LAB.cx + 3.7, 0, LAB.cz + 12.5); __L[1].hp = 100; });
+  await o.lookAt(await o.weakPos(1));
+  await o.ready(); await o.click('left');
+  await o.waitFor(() => __L[1].hp < 100, 4000); await wait(100);
+  o.expect('10m：銃弾が弱点に当たって一撃で死ぬ', await ev(() => __L[1].state), 'DEAD');
   // 刺突：左腕を触手にして印へ伸ばす
-  await ev(() => { const en = LAB.enemies[3]; en.group.position.set(LAB.cx + 8.5, 0, LAB.cz + 2.5); en.group.rotation.y = 0; setEnemyState(en, E.IDLE); en.stun = 0; playerPos.set(LAB.cx + 8.5, 0, LAB.cz + 7); player.arms.LEFT = makeArmState(ARM.TENTACLE); updateArmVisuals(); });
+  await ev(() => { const en = __L[3]; en.group.position.set(LAB.cx + 8.5, 0, LAB.cz + 2.5); en.group.rotation.y = 0; setEnemyState(en, E.IDLE); en.stun = 0; playerPos.set(LAB.cx + 8.5, 0, LAB.cz + 7); player.arms.LEFT = makeArmState(ARM.TENTACLE); updateArmVisuals(); });
   await o.lookAt(await o.weakPos(3));
   await o.ready(); await o.hold('left', 700); await wait(300);
-  o.expect('刺突が弱点に当たって即スタン（拘束しない）', await ev(() => LAB.enemies[3].state), 'STUNNED');
+  o.expect('刺突が弱点に当たって一撃で死ぬ（拘束しない）', await ev(() => __L[3].state), 'DEAD');
 
   o.section('B9：強敵の弱点はスタン値が約2倍');
-  await ev(() => { const en = LAB.enemies[6]; markWeak(en); player.arms.LEFT = makeArmState(ARM.FIST); updateArmVisuals(); });
+  await ev(() => { const en = __L[6]; markWeak(en); player.arms.LEFT = makeArmState(ARM.FIST); updateArmVisuals(); });
   const strongPunch = async (weak) => {
-    await ev(() => { const en = LAB.enemies[6]; en.group.position.set(LAB.cx, 0, LAB.cz - 13); en.group.rotation.y = 0; setEnemyState(en, E.IDLE); en.stun = 0; en.cooldown = 99; playerPos.set(LAB.cx, 0, LAB.cz - 11.1); });
+    await ev(() => { const en = __L[6]; en.group.position.set(LAB.cx, 0, LAB.cz - 13); en.group.rotation.y = 0; setEnemyState(en, E.IDLE); en.stun = 0; en.cooldown = 99; playerPos.set(LAB.cx, 0, LAB.cz - 11.1); });
     const w = await o.weakPos(6);
     await o.lookAt(weak ? w : { x: w.x + 0.0, y: w.y + 0.85, z: w.z });
     await o.ready(); await o.click('left');
-    await o.waitFor(() => LAB.enemies[6].stun > 0, 4000);   // パンチが当たるまで（遅いマシンでも取りこぼさない）
-    const st = await ev(() => LAB.enemies[6].stun);
+    await o.waitFor(() => __L[6].stun > 0, 4000);   // パンチが当たるまで（遅いマシンでも取りこぼさない）
+    const st = await ev(() => __L[6].stun);
     await wait(500);
     return st;
   };
@@ -171,7 +193,7 @@ const { setup } = require('./bt');
 
   o.section('A10：腕HP0で腕とスキャナが一緒に消える');
   await ev(() => { player.arms.RIGHT = makeArmState(ARM.FIST, { purged: true, wrist: { id: 'scanner' }, hp: CONFIG.scanHitCost }); updateArmVisuals();
-    LAB.enemies[1].group.position.set(LAB.cx + 3.5, 0, LAB.cz + 4); });
+    __L[1].group.position.set(LAB.cx + 3.5, 0, LAB.cz + 4); });
   await standAt(4, 8.5, 0, -0.05); await wait(300);
   await scan('right');
   const lostR = await arm('RIGHT');
@@ -227,8 +249,8 @@ const { setup } = require('./bt');
   o.expect('戻ったスキャナでスキャンできる', await (async () => { const n = await ev(() => scanStats.scans); await scan('left'); return (await ev(() => scanStats.scans)) - n; })(), 1);
 
   o.section('B11：死亡・リセットで古い印が残らない');
-  await ev(() => { const en = LAB.enemies[1]; markWeak(en); applyDamage(en, 999); });
-  o.expect('倒した敵の印は消える', await ev(() => LAB.enemies[1].weak), null);
+  await ev(() => { const en = __L[1]; markWeak(en); applyDamage(en, 999); });
+  o.expect('倒した敵の印は消える', await ev(() => __L[1].weak), null);
   o.expect('死体に印は付いていない', await ev(() => { let n = 0; for (const c of corpses) c.group.traverse((x) => { if (x.isSprite) n++; }); return n; }), 0);
   await page.keyboard.press('KeyG'); await wait(400);
   o.expect('リセット後、どの敵にも印は無い', await ev(() => enemies.every((e) => !e.weak)), true);

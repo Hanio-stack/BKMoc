@@ -30,7 +30,7 @@ const { setup } = require('./bt');
 
   o.section('パージ：手首が飛んで当たる');
   await facing(5); await o.ready();
-  await o.hold('right', 450); await wait(600);
+  await o.hold('right', 700); await wait(600);
   o.expect('右腕はパージ済み', (await arm('RIGHT')).purged, true);
   o.expect('手首が当たって敵のHPが減った', await ev(() => enemies[0].hp), 80);
 

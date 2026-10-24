@@ -10,7 +10,7 @@ const { setup } = require('./bt');
   o.expect('雑魚がスタン', await ev(() => enemies[0].state), 'STUNNED');
   const c0 = await ev(() => corpses.length);
   await page.mouse.down({ button: 'left' }); await wait(40); await page.mouse.up({ button: 'left' });
-  await wait(1600);
+  await o.waitFor(() => enemies[0].state === E.DEAD && enemies[0].headless, 5000);
   o.expect('掴みフィニッシャーで首が取れて倒れる', await ev(() => ({ state: enemies[0].state, headless: enemies[0].headless })), { state: 'DEAD', headless: true });
   o.expect('死体が1つ増える', await ev(() => corpses.length), c0 + 1);
 

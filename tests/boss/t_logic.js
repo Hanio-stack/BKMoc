@@ -71,6 +71,17 @@ const { setup } = require('./bt');
     strong: weakTypeOf({ strong: true }), grunt: weakTypeOf({}),
     gruntSpots: WEAK_TYPES.grunt.spots.length > 1,
   })), { boss: 'fixed:chest', strong: 'strong', grunt: 'grunt', gruntSpots: true });
+  o.expect('弱点の効き方：雑魚は一撃で倒す・強敵とボスはスタン値を倍', await ev(() => ({
+    grunt: WEAK_TYPES.grunt.effect, strong: WEAK_TYPES.strong.effect, boss: WEAK_TYPES.boss.effect })),
+    { grunt: 'kill', strong: 'stunMul', boss: 'stunMul' });
+  o.expect('雑魚の弱点に当てると一撃で倒れる（関数を直接呼ぶ）', await ev(() => {
+    const en = enemies[1];
+    const r = { before: en.state };
+    weakStrike(en, 10);
+    r.after = en.state; r.hp = en.hp;
+    resetAll();
+    return r;
+  }), { before: 'IDLE', after: 'DEAD', hp: 0 });
   o.expect('片付けると印が消える', await ev(() => {
     const en = enemies[0];
     markWeak(en);

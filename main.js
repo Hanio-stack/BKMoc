@@ -141,7 +141,7 @@
                  波紋が敵に触れたら、その1回のスキャンにつき腕HPが1回分減る（空振りは減らない）。
      弱点: 印は敵が死ぬまで消えない。再スキャンしても増えず、場所も変わらない。
            印そのものに攻撃が当たったときだけ効く（クロスヘアの線で見る）。
-           雑魚は即スタン、強敵・ボスはスタン値が weakStunMul（2）倍。
+           雑魚は一撃で死ぬ、強敵・ボスはスタン値が weakStunMul（2）倍。
            拳・パージした手首・銃弾・触手（薙ぎ払い／刺突）・阿修羅の追加の腕で狙える。
 
    爆弾腕（BOMB）:
@@ -679,8 +679,9 @@ const CONFIG = {
 
   /* --- 弱点（スキャンで付く赤い印）--- */
   weakHitRadius: 0.36,         // 攻撃の通り道が印からこの距離以内なら弱点に当たった(m)
+  weakHitRadiusPerM: 0.012,    // 離れるほど少し甘くする（1mごとに足す量）。銃で遠くの印を狙えるように
   weakSweepHeight: 0.50,       // 触手の薙ぎ払いの刃の高さと印の高さの許容差(m)
-  weakStunMul: 2.0,            // 強敵・ボスの弱点に当てたときのスタン値の倍率（雑魚は即スタン）
+  weakStunMul: 2.0,            // 強敵・ボスの弱点に当てたときのスタン値の倍率（雑魚は一撃で死ぬ）
   weakMarkerSize: 0.36,        // 印の大きさ(m)
 
   /* --- 強敵（ギミック検証室）--- */
@@ -2314,7 +2315,7 @@ function resolveBullet(p, en) {
   applyDamage(en, dmg);
   // 拘束中は姿勢を奪えない（崩すと拘束が壊れる）が、スタンは溜まる。
   // 溜め切ってから離すと、その場で崩れて掴みに繋がる（releaseTentacle）
-  if (weak && en.state !== E.DEAD) { weakStrike(en, CONFIG.gunStun); weakFeedback(); }
+  if (weak && en.state !== E.DEAD) weakStrike(en, CONFIG.gunStun);
   else applyStun(en, CONFIG.gunStun);
   // 当たった点で必ず肉片を飛ばす。血が出ないと「通っていない」と読まれる
   spawnFleshBurst(p.obj.position, pinned ? 4 : 2, 2.2, null, 0.4);
@@ -2328,6 +2329,7 @@ function resolveBullet(p, en) {
     addHitstop(0.02);
     showFeedback('SHOT  -' + Math.round(dmg), '#ffe9a0', 22);
   }
+  if (weak) weakFeedback();
   // 阿修羅の追加の腕の弾は回避の判定に数えない（asuraHit と同じ理由）
   if (!p.extra) checkEnemyEscape(en);
 }
@@ -2517,7 +2519,7 @@ function resolvePunch(en, side) {
     addShake(CONFIG.shakeNormal);
     showFeedback('HIT', '#e8e4da', 26);
   }
-  if (weak && en.state !== E.DEAD) weakFeedback();
+  if (weak) weakFeedback();
   // ヒットした近接だけ腕が削れる（空振りは減らない）。
   // 消えたときの表示がHITに上書きされないよう最後に呼ぶ
   damageArm(side, CONFIG.armHitCost);
@@ -4091,14 +4093,14 @@ function updateTentacle(rdt) {
       return;
     }
     if (hit && weakHitByAim(hit.enemy, hit.dist + 1.2) &&
-        (WEAK_TYPES[weakTypeOf(hit.enemy)] || WEAK_TYPES.grunt).effect === 'stun') {
-      // 雑魚の弱点を突いた：刺さったまま拘束せず、その場で崩す
+        (WEAK_TYPES[weakTypeOf(hit.enemy)] || WEAK_TYPES.grunt).effect === 'kill') {
+      // 雑魚の弱点を突いた：拘束せず、その場で倒す
       const e = hit.enemy;
       h.phase = 'retract';
       applyDamage(e, CONFIG.tentStabDamage);
       if (e.state !== E.DEAD) weakStrike(e, CONFIG.tentStabStun);
       damageArm(h.side, CONFIG.tentStabCost);
-      if (e.state !== E.DEAD) weakFeedback();
+      weakFeedback();
       return;
     }
     if (hit) {
@@ -4678,7 +4680,7 @@ function tentSweepHit(en, atk) {
   if (!attacking && en.state !== E.DEAD && en.state !== E.STUNNED) enterHitReact(en, 0.6);
   damageArm(atk.side, CONFIG.tentSweepHitCost);
   atk.hits++;
-  if (weak && en.state !== E.DEAD) { weakFeedback(); return; }
+  if (weak) { weakFeedback(); return; }
   if (attacking) {
     addHitstop(CONFIG.hitstopTrade);
     addShake(CONFIG.shakeNormal * 1.6);
@@ -5107,7 +5109,7 @@ function asuraHit(en, xa, dmg, stun, cost, weak) {
   asuraCombo++;
   asuraComboT = 0.7;
   showFeedback('ASURA x' + asuraCombo, '#ffd75e', Math.min(44, 26 + asuraCombo * 2));
-  if (weak && en.state !== E.DEAD) weakFeedback();
+  if (weak) weakFeedback();
   damageAsuraArm(xa, cost);
 }
 
@@ -5326,7 +5328,7 @@ function clearHealFx() {
      再スキャンしても増えないし、場所も変わらない。
      弱点そのものに攻撃が当たったときだけ効く（敵に当たっただけでは効かない）。
      拳・パージした手首・銃弾・触手（薙ぎ払い／刺突）・阿修羅の追加の腕が対象。
-       雑魚    : 即スタン
+       雑魚    : 一撃で死ぬ
        強敵・ボス: スタン値が weakStunMul 倍
 
    爆弾腕:
@@ -6019,7 +6021,7 @@ function clearScanRipples() {
    弱点（WEAK POINT）
    WEAK_SPOTS : 印を付けられる場所（どの部位基準に、どこへ）
    WEAK_TYPES : 敵の種類ごとの候補と選び方（fixed=いつも1つ目 / random=候補から1つ）
-                と効き方（stun=即スタン / stunMul=スタン値を倍）
+                と効き方（kill=一撃で倒す / stunMul=スタン値を倍）
    敵の種類は weakTypeOf(en)：ボス / 強敵(en.strong) / それ以外は en.weakType か grunt
    ========================================================= */
 const WEAK_SPOTS = {
@@ -6030,7 +6032,7 @@ const WEAK_SPOTS = {
                                          en.torso.geometry.parameters.depth / 2 + 0.03] },
 };
 const WEAK_TYPES = {
-  grunt:  { pick: 'random', spots: ['head', 'chest', 'belly'], effect: 'stun' },
+  grunt:  { pick: 'random', spots: ['head', 'chest', 'belly'], effect: 'kill' },
   strong: { pick: 'fixed',  spots: ['chest'], effect: 'stunMul' },
   boss:   { pick: 'fixed',  spots: ['chest'], effect: 'stunMul' },
 };
@@ -6108,7 +6110,8 @@ function weakHitRay(en, origin, dir, len, radius) {
   weakWorld(en, _gmV3);
   _gmV1.copy(origin);
   _gmV2.copy(origin).addScaledVector(dir, len);
-  const r = (radius === undefined) ? CONFIG.weakHitRadius : radius;
+  const r = ((radius === undefined) ? CONFIG.weakHitRadius : radius) +
+            CONFIG.weakHitRadiusPerM * _gmV1.distanceTo(_gmV3);
   return pointSegDist2(_gmV3, _gmV1, _gmV2) <= r * r;
 }
 // 飛び道具（銃弾・パージした手首）。撃った瞬間のクロスヘアの線があればそれで、
@@ -6151,11 +6154,10 @@ function weakStrike(en, stun) {
   const type = WEAK_TYPES[weakTypeOf(en)] || WEAK_TYPES.grunt;
   weakStats.hits++;
   if (en.weak) en.weak.hit = 1;
-  if (type.effect === 'stun') {
-    // 雑魚は即スタン。崩せない状態（拘束・投げ・掴み中）では普通に溜まるだけ
-    const canDrop = en.state !== E.DEAD && en.state !== E.STUNNED && en.state !== E.GRABBED &&
-                    en.state !== E.TETHER && en.state !== E.THROWN;
-    if (canDrop) { en.stun = stunMax(en); enterStun(en); } else applyStun(en, stun);
+  if (type.effect === 'kill') {
+    // 雑魚は一撃で死ぬ（拘束中・投げられて飛んでいる最中・スタン中でも）。
+    // 掴みフィニッシャーで掴んでいる敵は手の中なので触らない（フィニッシャーが倒す）
+    if (en.state !== E.DEAD && en.state !== E.GRABBED) applyDamage(en, Math.max(1, en.hp));
   } else {
     applyStun(en, stun * CONFIG.weakStunMul);
   }
@@ -9429,7 +9431,7 @@ const MANUAL_PAGES = [
     cat: '手首アイテム', title: '弱点',
     keys: [['攻撃', '赤い印に当てる']],
     desc: '弱点の印は敵が死ぬまで消えない。もう一度スキャンしても増えないし、場所も変わらない。' +
-          '印そのものに攻撃を当てると、雑魚は即スタン、強敵とボスはスタン値が2倍になる。' +
+          '印そのものに攻撃を当てると、雑魚は一撃で倒れ、強敵とボスはスタン値が2倍になる。' +
           '印の無いところに当てても普通のヒット。拳・パージした手首・銃・触手（薙ぎ払い／刺突）で狙える。',
     art: () => aStage(
       aEnemy(180, 1.1, {}) +
@@ -10104,7 +10106,7 @@ function animate() {
           showFeedback(en.state === E.TETHER ? 'PINNED PURGE' : 'PURGE HIT', '#a8d8ff', 30);
           addHitstop(CONFIG.hitstopNormal);
         }
-        if (weak && en.state !== E.DEAD) weakFeedback();
+        if (weak) weakFeedback();
         addShake(CONFIG.shakeNormal * 1.4);
         checkEnemyEscape(en);
       }
