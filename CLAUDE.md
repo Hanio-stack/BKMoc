@@ -4,7 +4,7 @@ BK Combat Flow Mock（three.js r128 を使った静的ページ）。`main` が 
 https://hanio-stack.github.io/BKMoc/
 
 - 構成: `index.html` / `main.js`（戦闘・モードのロジック。調整値は `CONFIG` に集約）/ `style.css`。ビルドなし。
-  ステージ（セーフルーム／DEMO STAGE 1-1）は `stage.js`（仕組み）と `stages/*.js`（配置データ）。
+  ステージ（セーフルーム／DEMO STAGE 1-1・1-2）は `stage.js`（仕組み）と `stages/*.js`（配置データ）。
   main.js からはステージ中だけ stage.js の入口（`stageKeyHook` / `stageConfine` / `updateStage` など）を呼ぶ。
 - 設計資料 `BK_action-spec.md` / `BK_combat-mock_spec.md` は非公開（`.gitignore`）でリポジトリにない。
   仕様は `main.js` 冒頭のコメントが基準。
