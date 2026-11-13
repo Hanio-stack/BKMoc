@@ -211,8 +211,8 @@ const { setup } = require('./bt');
   o.expect('M3 達成', await ev(() => !!STG.prog.done.M3), true);
 
   o.section('M4：右腕01・左腕03・検体12で身体を完成させる');
-  await o.waitFor(() => document.getElementById('subtitle').textContent.indexOf('指定された部位') >= 0, 15000);
-  o.expect('研究員の指示（M4）', (await subtitle()).indexOf('指定された部位を装着し') >= 0, true);
+  // 字幕は次の放送で差し替わることがあるので、表示された瞬間を待って判定する
+  o.expect('研究員の指示（M4）', await o.waitFor(() => document.getElementById('subtitle').textContent.indexOf('指定された部位を装着し') >= 0, 15000), true);
   o.expect('目標は左腕03 を探す', await ev(() => stageObjective().text.indexOf('左腕03') >= 0), true);
   await tp(44, -106.4, 0);
   o.expect('胴体は両腕の前には置けない', await pickLabel('胴体を据える'), '胴体を据える');
@@ -304,6 +304,20 @@ const { setup } = require('./bt');
     [0, 0, 0, false, false, false, true, false]);
   o.expect('右腕01 と検体12 が戻る', await ev(() => [findTaggedArm('R01').where, corpses.filter((c) => c.bodyTag === '12').length]), ['ground', 1]);
   o.expect('組立台のランプも消える', await ev(() => STG.L.frame.lamps.LEFT.material.color.getHex()), 0x3a1410);
+
+  o.section('回帰：乗っ取りの途中で検体12が仕分け機に届いても、拘束が外れて検体12の体で動ける');
+  await toHead();
+  await ev(() => {
+    const L = STG.L, c = corpses.find((q) => q.bodyTag === '12'), ln = c.belt.lane;
+    c.belt.z = ln.kIn - ln.dir * 0.3; c.group.position.z = c.belt.z;   // 仕分け機の 0.3m 手前
+    playerPos.set(L.X(12.4), 0, c.belt.z);
+    player.hp = 20;                                                     // 頭で長く移動して HP が減っている
+    startPossess(c);
+  });
+  await possessDone();
+  await o.waitFor(() => state === 'HUMAN', 4000);
+  o.expect('搬出台で検体12の体になる（死なない・重複しない）', await ev(() => [state, player.bodyTag, player.hp > 0, STG.dead > 0,
+    corpses.filter((c) => c.bodyTag === '12').length, +(playerPos.x - STG.L.X(19.5)).toFixed(1)]), ['HUMAN', '12', true, false, 0, 0]);
   await key('KeyH', 100);
   await o.waitFor(() => !STG.fade && STG.area === 'safe', 8000);
   await tp(-5.2, 0, 90); await pickLabel('会話する');
