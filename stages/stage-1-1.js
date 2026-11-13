@@ -215,7 +215,6 @@
     { type: 'sign', x: -2.05, y: 2.1, z: -56, face: 'w', w: 1.4, h: 0.8, lines: ['検体補助保管', '予備検体'], style: 'notice' },
     // --- 保守通路 ---
     { type: 'sign', x: -17.95, y: 1.9, z: -33, face: 'e', w: 1.0, h: 0.3, lines: ['保守通路'], style: 'plate' },
-    { type: 'barrel', x: 8.0, z: -33.6 },
     // --- 旧弾薬庫（アリーナ1・B） ---
     { type: 'sign', x: 30, y: 2.2, z: -44.05, face: 'n', w: 1.6, h: 0.5, lines: ['旧弾薬庫'], style: 'stencil' },
     { type: 'pillar', x: 40, z: -42, w: 1.4, d: 1.4 }, { type: 'pillar', x: 52, z: -42, w: 1.4, d: 1.4 },

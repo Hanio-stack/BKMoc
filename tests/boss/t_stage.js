@@ -69,6 +69,38 @@ const { setup } = require('./bt');
   o.expect('最初の目標はバルブ', await ev(() => stageObjective().text.startsWith('3つのバルブを開いて')), true);
   o.expect('中央の扉は閉じている', await ev(() => STG.L.doors.dA.open), false);
 
+  o.section('どの通路も端から端まで歩いて通れる（置き物で塞がっていない）');
+  o.expect('塞がった通路がない', await ev(() => {
+    const L = STG.L, bad = [];
+    const saved = {};
+    for (const id in L.doors) { saved[id] = [L.doors[id].open, L.doors[id].k]; L.doors[id].open = true; L.doors[id].k = 1; }
+    for (const sp of L.spaces) {
+      if (sp.type !== 'corridor' && sp.type !== 'duct') continue;
+      const head = sp.type === 'duct';
+      const st = 0.2, along = sp.type === 'duct' ? (sp.x1 - sp.x0 > sp.z1 - sp.z0) : sp.alongX;
+      const a0 = along ? sp.x0 : sp.z0, a1 = along ? sp.x1 : sp.z1, b0 = along ? sp.z0 : sp.x0, b1 = along ? sp.z1 : sp.x1;
+      const na = Math.ceil((a1 - a0) / st), nb = Math.ceil((b1 - b0) / st);
+      const ok = (i, j) => { const a = a0 + i * st, b = b0 + j * st; return along ? stageWalkable(a, b, head) : stageWalkable(b, a, head); };
+      const seen = new Set(), q = [];
+      // 端から 1.2m 以内の歩ける点から始めて、反対の端 1.2m 以内まで届くか
+      const edge = Math.round(1.2 / st);
+      for (let i = 0; i <= edge; i++) for (let j = 0; j <= nb; j++) if (ok(i, j)) { seen.add(i + ',' + j); q.push([i, j]); }
+      let reached = false;
+      while (q.length) {
+        const [i, j] = q.pop();
+        if (i >= na - edge) { reached = true; break; }
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const I = i + di, J = j + dj, k = I + ',' + J;
+          if (I < 0 || J < 0 || I > na || J > nb || seen.has(k) || !ok(I, J)) continue;
+          seen.add(k); q.push([I, J]);
+        }
+      }
+      if (!reached) bad.push(sp.id);
+    }
+    for (const id in saved) { L.doors[id].open = saved[id][0]; L.doors[id].k = saved[id][1]; }
+    return bad;
+  }), []);
+
   o.section('壁と通路：壁は抜けない・ダクトは頭だけが通れる');
   await tp(0, 3.5, -90);
   await page.keyboard.down('KeyW'); await wait(4000); await page.keyboard.up('KeyW');
