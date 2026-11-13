@@ -28,7 +28,7 @@
        自分が捨てた体は数も残りもそのまま残る。死体側には数を出さない（乗り移るまで分からない）
      F                落ちている/浮いている腕と交換
      T                ギミック検証室（スキャナ・弱点・爆弾腕を試す部屋。押すたびに作り直す）
-     H                セーフルームへ移動（暗転してワープ。受付で DEMO STAGE 1-1 を選べる）
+     H                セーフルームへ移動（暗転してワープ。受付で DEMO STAGE 1-1 / 1-2 を選べる）
                       ※ステージの仕組みは stage.js、配置は stages/*.js。main.js からは入口だけ呼ぶ
      G                リセット
      Tab              今の目的を左上に表示／もう一度押すと消える
@@ -1307,6 +1307,7 @@ function createCorpse(x, z, rotY, opts) {
     resMax,
     resource: (typeof opts.resource === 'number') ? Math.min(resMax, opts.resource) : resMax,
     extraArms: opts.extraArms || null,
+    bodyTag: opts.bodyTag || null,   // 体の検体番号（ステージの「検体12」など）。乗っ取り・捨てても体に付いて回る
     blinkPhase: 0,
     bombRig,
   };
@@ -3234,6 +3235,7 @@ function enterHeadMode() {
     skill: player.skill,                 // 使用済みかどうかも体と一緒に残る
     resMax: player.resMax, resource: player.resource,   // リソースの数と残りも体に残る
     extraArms: stashAsuraArms(),         // 阿修羅の腕は体に付いたまま（拾い直すと生え直す）
+    bodyTag: player.bodyTag,             // 検体番号も体に残る
   });
   // 頭は後ろへ跳ぶ。同じ座標のままだと自分の死体の中に埋まり、
   // 切り離した直後の一番見せたい瞬間が死体で埋まってしまう。
@@ -3396,6 +3398,7 @@ function finishPossess() {
   }
   // 体スキルも体と一緒に入れ替わる。阿修羅を使った自分の体なら腕も生え直す
   player.skill = Object.assign({}, c.skill);
+  player.bodyTag = c.bodyTag || null;
   // リソースの数も体ごと。新しい体は満タン、自分が捨てた体は捨てた時点の残り
   player.resMax = c.resMax;
   player.resource = c.resource;
@@ -8389,6 +8392,7 @@ function warpToBoss() {
   player.arms.LEFT = makeArmState(ARM.FIST);
   player.arms.RIGHT = makeArmState(ARM.FIST);
   player.skill = makeBodySkill();
+  player.bodyTag = null;
   clearAsuraArms();
   updateArmVisuals();
   playerPos.set((ARENA.gate.x0 + ARENA.gate.x1) / 2, 0, ARENA.z1 + 3.0);
@@ -8803,6 +8807,7 @@ function resetAll() {
   player.arms.LEFT = makeArmState(ARM.FIST);
   player.arms.RIGHT = makeArmState(ARM.FIST);
   player.skill = makeBodySkill();
+  player.bodyTag = null;
   clearAsuraArms();
   clearHealFx();
   clearScanRipples();
