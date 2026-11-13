@@ -139,7 +139,7 @@ const { setup } = require('./bt');
   await tp(-18, -50, 90); await wait(300);
   o.expect('バルブのプロンプト', await pickLabel('バルブを回す'), 'バルブを回す');
   await key('KeyF', 200);
-  o.expect('銃腕では回らない', await ev(() => STG.busy), null);
+  o.expect('銃腕では回らない', await ev(() => !!STG.busy), false);
   o.expect('理由が字幕に出る', await ev(() => document.getElementById('subtitle').textContent.indexOf('普通の腕でなければ力が入らない') >= 0), true);
   // 近くの両腕が拳の死体へ乗り移って回す
   await tp(-12, -43.4, 180); await wait(200);
@@ -167,7 +167,7 @@ const { setup } = require('./bt');
   o.expect('入口と出口が閉じる', await ev(() => [STG.L.doors.ar1W.open, STG.L.doors.ar1S.open]), [false, false]);
   await tp(55.6, -49, -90); await wait(300);
   await key('KeyF', 200);
-  o.expect('戦闘中はバルブを回せない', await ev(() => STG.busy), null);
+  o.expect('戦闘中はバルブを回せない', await ev(() => !!STG.busy), false);
   for (let w = 0; w < 3; w++) {
     await o.waitFor(() => STG.enc.arena1.pending.length === 0, 12000);
     await killEnc('arena1'); await wait(700);
@@ -207,9 +207,10 @@ const { setup } = require('./bt');
   o.section('ミッションB：指定番号の腕を照合装置へ');
   await ev(() => { player.arms.LEFT = makeArmState(ARM.FIST); player.arms.RIGHT = makeArmState(ARM.FIST); updateArmVisuals(); });
   await tp(8.2, -71.2, 90); await wait(300);
-  o.expect('照合装置のプロンプト', await pickLabel('腕を提出する'), '腕を提出する');
+  o.expect('照合装置のプロンプト：持っていないと必要な腕を出す', await pickLabel('番号01の腕が必要（未装備）'), '番号01の腕が必要（未装備）');
   await key('KeyF', 200);
-  o.expect('番号のない腕は受け付けない', await ev(() => [STG.busy, STG.prog.done.B]), [null, undefined]);
+  o.expect('番号のない腕は受け付けない', await ev(() => [!!STG.busy, STG.prog.done.B]), [false, undefined]);
+  o.expect('押すと理由が字幕に出る（無反応にしない）', (await ev(() => document.getElementById('subtitle').textContent)).indexOf('必要な腕は番号01の腕です') >= 0, true);
   o.expect('CRTに不一致', await ev(() => STG.L.armCrt.tex.userData.cv.toDataURL().length > 0), true);
   o.expect('01 の腕は保管室の台座にある', await ev(() => { const a = findTaggedArm('01'); return a.where; }), 'ground');
   o.expect('台座の腕に番号のステンシル', await ev(() => !!(STG.arm01.obj.userData.addons && STG.arm01.obj.userData.addons.tag)), true);
@@ -235,6 +236,7 @@ const { setup } = require('./bt');
   await ev(() => takeGroundArm({ part: STG.arm01 }, 'LEFT'));
   await o.waitFor(() => graftArms.length === 0, 12000);
   await tp(8.2, -71.2, 90); await wait(300);
+  o.expect('左手に付けても提出できる（左右の指定なし）', await pickLabel('番号01の腕を提出する'), '番号01の腕を提出する');
   await key('KeyF', 300);
   o.expect('提出中', await ev(() => STG.busy && STG.busy.what), 'crusher');
   o.expect('提出した腕は外れる', await ev(() => player.arms.LEFT.lost), true);
@@ -304,19 +306,21 @@ const { setup } = require('./bt');
   o.expect('倒すと開く', await ev(() => [STG.L.doors.ar2E.open, STG.L.doors.ar2N.open]), [true, true]);
 
   o.section('ミッションD：身体の組み立て');
-  await ev(() => { player.arms.LEFT = makeArmState(ARM.TENTACLE); player.arms.RIGHT = makeArmState(ARM.FIST); updateArmVisuals(); });
+  await ev(() => { player.arms.LEFT = makeArmState(ARM.TENTACLE); player.arms.RIGHT = makeArmState(ARM.GUN); updateArmVisuals(); });
   await tp(-60.85, -117.6, 0); await wait(300);
   o.expect('左腕の掛け金', await pickLabel('左腕を掛ける'), '左腕を掛ける');
   await key('KeyF', 200);
-  o.expect('触手腕は置けない', await ev(() => [STG.busy, STG.prog.slots.LEFT]), [null, null]);
+  o.expect('通常腕が無ければ置けない', await ev(() => [!!STG.busy, STG.prog.slots.LEFT]), [false, null]);
+  o.expect('理由が字幕に出る', (await ev(() => document.getElementById('subtitle').textContent)).indexOf('左腕の掛け金には通常腕が必要') >= 0, true);
   await tp(-62, -117.6, 0); await wait(300);
   o.expect('胴体', await pickLabel('胴体を据える'), '胴体を据える');
   await key('KeyF', 200);
   o.expect('両腕の前に胴体は置けない', await ev(() => STG.prog.slots.torso), false);
-  await ev(() => { player.arms.LEFT = makeArmState(ARM.FIST); player.arms.RIGHT = makeArmState(ARM.GUN); updateArmVisuals(); });
+  // 通常腕を右手に付けていても、左の掛け金に掛けられる（左右の手を問わない）
+  await ev(() => { player.arms.LEFT = makeArmState(ARM.GUN); player.arms.RIGHT = makeArmState(ARM.FIST); updateArmVisuals(); });
   await tp(-60.85, -117.6, 0); await wait(300);
   await key('KeyF', 100); await o.waitFor(() => !STG.busy, 8000);
-  o.expect('左腕を掛けた', await ev(() => [STG.prog.slots.LEFT && STG.prog.slots.LEFT.kind, player.arms.LEFT.lost]), ['fist', true]);
+  o.expect('右手の通常腕を左の掛け金に掛けた', await ev(() => [STG.prog.slots.LEFT && STG.prog.slots.LEFT.kind, player.arms.RIGHT.lost, player.arms.LEFT.kind]), ['fist', true, 'gun']);
   await tp(-63.15, -117.6, 0); await wait(300);
   o.expect('右腕の掛け金', await pickLabel('右腕を掛ける'), '右腕を掛ける');
   await key('KeyF', 100); await o.waitFor(() => !STG.busy, 8000);
@@ -388,6 +392,81 @@ const { setup } = require('./bt');
   await o.waitFor(() => !STG.fade && !STG.crushed && state === 'HUMAN', 8000);
   o.expect('B 達成後の地点へ戻る', await ev(() => [+(playerPos.x - STG.L.X(-2)).toFixed(1), +(playerPos.z - STG.L.Z(-76)).toFixed(1)]), [0, 0]);
   o.expect('固定は解除されている', await ev(() => [STG.strap, corpses.filter((c) => c.occupied).length]), [null, 0]);
+
+  o.section('予備腕の支給：腕を使い切っても詰まない（1-1）');
+  await ev(() => stageEnterArea('1-1'));
+  await o.waitFor(() => !STG.fade && STG.area === '1-1', 12000);
+  // 戦闘で両腕を失い、近くの死体や床の腕も使い切った状態
+  await ev(() => {
+    for (const id in STG.enc) STG.enc[id].state = 'cleared';
+    for (const c of corpses.slice()) if (!c.belt) removeCorpse(c);
+    for (const p of severedParts.slice()) if (!(p.armState && p.armState.tag)) removeSeveredPart(p, true);
+    damageArm('LEFT', 999); damageArm('RIGHT', 999);
+  });
+  await tp(-12.5, -45, 90); await wait(300);
+  o.expect('両腕がない', await ev(() => [player.arms.LEFT.lost, player.arms.RIGHT.lost]), [true, true]);
+  o.expect('（まだ支給されない）', await ev(() => severedParts.filter((p) => p.supply).length), 0);
+  await o.waitFor(() => severedParts.filter((p) => p.supply).length > 0, 9000);
+  o.expect('第一制御室の支給口に通常腕が2本だけ出る', await ev(() => {
+    const ps = severedParts.filter((p) => p.supply);
+    return [ps.length, ps.every((p) => p.armState.kind === 'fist' && !p.armState.tag),
+      ps.every((p) => Math.abs(p.obj.position.x - STG.L.X(-9.9)) < 0.2 && Math.abs(p.obj.position.z - STG.L.Z(-42)) < 0.6)];
+  }), [2, true, true]);
+  o.expect('支給の字幕', (await ev(() => document.getElementById('subtitle').textContent)).indexOf('予備の通常腕を補充') >= 0, true);
+  // ライジング（Q）で床の腕に照準を合わせ、左右のクリックで付ける（実際の操作）
+  const realTake = async (btn) => {
+    const side = btn === 'left' ? 'LEFT' : 'RIGHT';
+    for (let tries = 0; tries < 3; tries++) {
+      await page.keyboard.down('KeyQ');
+      await o.waitFor(() => state === 'RISING', 4000); await wait(400);
+      const ok = await o.waitFor(() => {
+        const p = severedParts.filter((q) => q.supply && q.phase === 'grounded')
+          .sort((a, b) => a.obj.position.distanceTo(camera.position) - b.obj.position.distanceTo(camera.position))[0];
+        if (!p) return false;
+        const c = camera.position, t = p.obj.position;
+        yaw = Math.atan2(-(t.x - c.x), -(t.z - c.z)); pitch = Math.atan2(t.y - c.y, Math.hypot(t.x - c.x, t.z - c.z));
+        return !!(selectedTarget && selectedTarget.part === p);
+      }, 6000);
+      if (ok) { await page.mouse.down({ button: btn }); await wait(120); await page.mouse.up({ button: btn }); }
+      await o.waitFor((side) => graftArms.length === 0 && !player.arms[side].lost, ok ? 12000 : 200, side);
+      await page.keyboard.up('KeyQ'); await wait(500);
+      if (await ev((side) => !player.arms[side].lost && player.arms[side].kind === 'fist', side)) return true;
+    }
+    return false;
+  };
+  await tp(-11.6, -42, 90, -30); await wait(200);
+  o.expect('左クリックで左腕を付けた', [await realTake('left'), await ev(() => [player.arms.LEFT.kind, player.arms.LEFT.lost])], [true, ['fist', false]]);
+  o.expect('右クリックで右腕を付けた', [await realTake('right'), await ev(() => [player.arms.RIGHT.kind, player.arms.RIGHT.lost])], [true, ['fist', false]]);
+  await wait(5500);
+  o.expect('足りていれば増えない', await ev(() => severedParts.filter((p) => p.supply).length), 0);
+  await tp(-18, -50, 90); await wait(300);
+  o.expect('支給された両腕でバルブを回せる', await pickLabel('バルブを回す'), 'バルブを回す');
+  await key('KeyF', 100);
+  await o.waitFor(() => !STG.busy && STG.prog.valves.A, 15000);
+  o.expect('バルブA が開いた', await ev(() => !!STG.prog.valves.A), true);
+
+  o.section('予備腕の支給：閉じたアリーナの中で腕を失っても立て直せる');
+  await ev(() => { STG.enc.arena1.state = 'idle'; STG.prog.cleared.arena1 = false; });
+  await tp(46, -44, 180); await wait(400);
+  await o.waitFor(() => STG.enc.arena1.state === 'active', 6000);
+  o.expect('アリーナが始まり扉が閉まる', await ev(() => [STG.enc.arena1.state, STG.L.doors.ar1W.open]), ['active', false]);
+  await ev(() => {
+    const z = STG.enc.arena1.zone;
+    for (const c of corpses.slice()) if (!c.belt && inR(z, c.group.position.x, c.group.position.z)) removeCorpse(c);
+    damageArm('LEFT', 999); damageArm('RIGHT', 999);
+    player.hp = 100;
+  });
+  await o.waitFor(() => severedParts.some((p) => p.supply && inR(STG.enc.arena1.zone, p.obj.position.x, p.obj.position.z)), 9000);
+  o.expect('アリーナの中の支給口に2本出る', await ev(() => severedParts.filter((p) => p.supply && inR(STG.enc.arena1.zone, p.obj.position.x, p.obj.position.z)).length), 2);
+  await ev(() => { player.hp = 100; for (const en of STG.enc.arena1.enemies) en.cooldown = 99; });
+  await tp(54.5, -59.8, 160, -30); await wait(200);
+  o.expect('拾って戦闘を続けられる', [await realTake('left'), await ev(() => player.arms.LEFT.lost)], [true, false]);
+  for (let w = 0; w < 4; w++) {
+    await o.waitFor(() => STG.enc.arena1.pending.length === 0, 12000);
+    await killEnc('arena1'); await wait(700);
+    if (await ev(() => STG.enc.arena1.state === 'cleared')) break;
+  }
+  o.expect('アリーナを終えられる（扉が開く）', await ev(() => [STG.enc.arena1.state, STG.L.doors.ar1W.open]), ['cleared', true]);
 
   o.section('既存のモードへ戻れる（回帰）');
   await key('KeyG', 400);

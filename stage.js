@@ -23,7 +23,8 @@
      B  指定番号の腕  番号の付いた腕（tag）を付けて照合装置へ。腕は粉砕されて扉が開く。
                       番号の腕が壊れて世界のどこにも無くなったら、台座に1本だけ補充される
      C  搬送コンベア  ベルトの死体に乗り移る＝固定されて運ばれる（S.STRAPPED）。
-                      Space で頭だけになって次のベルトの死体へ。端の粉砕機に入ると死ぬ
+                      Space で頭だけになって次のベルトの死体へ。端の粉砕機に入ると死ぬ。
+                      exit を指定したベルトの終点は粉砕機ではなく搬出口：乗っている体ごと搬出台へ出る
      D  身体の組み立て 台座に 左腕→右腕→胴体 の順で自分の部位を置く。胴体を置くと頭になるので、
                       完成した身体に乗り移ると扉が開く
    ========================================================= */
@@ -39,6 +40,7 @@ const STAGE_CFG = {
   valveTime: 3.0,          // バルブを回す時間(s)
   corridorWall: 2.6,       // 通路の垂直な壁の高さ(m)。その上がかまぼこ天井
   doorSpeed: 1.6,          // 扉が開く速さ(1/s)
+  supplyDelay: 4.0,        // 通常腕が足りない状態がこれだけ続いたら支給口に補充する(s)
   lightPool: 8,            // 実際に光る点光源の数。照明器具は多いので、近い順にこの数だけ灯す
   lightRange: 15,
   playerR: 0.35,           // 壁との当たりの半径（人間）
@@ -1473,6 +1475,7 @@ function buildSwitchBody(L, F, p) {
 
 function buildGimmicks(L) {
   const def = L.def, B = L.batches, X = L.X, Z = L.Z;
+  buildArmSupply(L);
   // --- バルブ（ミッションA） ---
   if (def.valves) {
     L.valves = {};
@@ -1549,6 +1552,103 @@ function buildGimmicks(L) {
 /* ---------- 搬送コンベア（ミッションC） ----------
    床は下がった穴。ベルトだけが高い。足場（東と西）はコンクリートの台。
    ベルトの進む先の端に粉砕機、反対の端に死体の出てくる口がある              */
+// 粉砕機（ベルトの進む先の端）
+function buildLaneCrusher(L, cv, ln, x, h, by, fy, kill, kIn) {
+  const B = L.batches;
+  const hz0 = Math.min(kIn, kill + ln.dir * 1.2), hz1 = Math.max(kIn, kill + ln.dir * 1.2);
+  addBox(B.metal, x - h - 0.5, x + h + 0.5, fy, by + 2.4, hz0, hz1, 0x4a3c32);
+  const mouthZ = kIn - ln.dir * 0.02;
+  const mouth = new THREE.Mesh(new THREE.PlaneGeometry(h * 2, 1.0), new THREE.MeshBasicMaterial({ color: 0x050303 }));
+  mouth.position.set(x, by + 0.55, mouthZ); mouth.rotation.y = ln.dir < 0 ? 0 : Math.PI;
+  L.group.add(mouth);
+  const stripe = new THREE.Mesh(new THREE.PlaneGeometry(h * 2 + 1, 0.3), new THREE.MeshLambertMaterial({ map: (() => { const t = hazardTexture().clone(); t.needsUpdate = true; t.wrapS = THREE.RepeatWrapping; t.repeat.set(2, 1); return t; })() }));
+  stripe.position.set(x, by + 1.25, mouthZ); stripe.rotation.y = mouth.rotation.y;
+  L.group.add(stripe);
+  const drums = [];
+  for (const dy of [0.25, 0.85]) {
+    const d = new THREE.Group();
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, h * 2 - 0.1, 10), new THREE.MeshLambertMaterial({ color: 0x5e6264 }));
+    cyl.rotation.z = Math.PI / 2; d.add(cyl);
+    for (let k = 0; k < 8; k++) {
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(h * 2 - 0.1, 0.07, 0.1), new THREE.MeshLambertMaterial({ color: 0x9a9ea0 }));
+      tooth.position.set(0, Math.cos(k / 8 * Math.PI * 2) * 0.23, Math.sin(k / 8 * Math.PI * 2) * 0.23);
+      tooth.rotation.x = k / 8 * Math.PI * 2;
+      d.add(tooth);
+    }
+    d.position.set(x, by + dy, kIn - ln.dir * 0.25);
+    L.group.add(d);
+    drums.push(d);
+  }
+  L.fixtures.push({ pos: new THREE.Vector3(x, by + 2.2, kIn - ln.dir * 0.6), tone: 'red' });
+  return drums;
+}
+
+// 搬出口（ベルトの終点が次の区画への開口になっている。粉砕機は置かない）
+// 緑に塗った枠と回転灯、奥に次の区画の明かり、ベルト脇の誘導灯（終点へ向かって順に点く）
+function buildLaneExit(L, cv, ln, x, h, by, fy, kill, kIn) {
+  const B = L.batches, dir = ln.dir;
+  const zIn = kIn, zOut = kill + dir * 1.2;                 // 枠の手前（口）と奥（壁）
+  const za = Math.min(zIn, zOut), zb = Math.max(zIn, zOut);
+  const top = by + 1.7, w = h + 0.15;
+  const frame = 0x3f6a50, white = 0xd8d8cc;
+  // 柱と梁（厚い枠）。下は床まで
+  addBox(B.metal, x - w - 0.5, x - w, fy, by + 2.7, za, zb, frame);
+  addBox(B.metal, x + w, x + w + 0.5, fy, by + 2.7, za, zb, frame);
+  addBox(B.metal, x - w - 0.5, x + w + 0.5, top, by + 2.7, za, zb, frame);
+  // 開口の縁取り（白線）
+  const zf = zIn - dir * 0.01;
+  for (const [x0, x1, y0, y1] of [[x - w - 0.08, x - w, by, top], [x + w, x + w + 0.08, by, top], [x - w - 0.08, x + w + 0.08, top - 0.08, top]]) {
+    addBox(B.metal, x0, x1, y0, y1, Math.min(zf, zf - dir * 0.04), Math.max(zf, zf - dir * 0.04), white);
+  }
+  // 中は短いトンネル。奥に次の区画の明かり（暖色の壁）
+  addBox(B.dark, x - w, x + w, top - 0.02, top, za, zb, 0x141210);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(w * 2, top - by), new THREE.MeshBasicMaterial({ color: 0xc9a066 }));
+  const zBack = kill + dir * 0.85;                         // 部屋の壁のすぐ手前
+  back.position.set(x, (by + top) / 2, zBack);
+  back.rotation.y = dir < 0 ? 0 : Math.PI;
+  L.group.add(back);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(w * 2, 0.5), new THREE.MeshBasicMaterial({ color: 0xffe2b0, transparent: true, opacity: 0.35, depthWrite: false }));
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.set(x, by + 0.02, zBack - dir * 0.5);
+  L.group.add(glow);
+  // 枠の上の回転灯（黄）2つ
+  const lamps = [];
+  for (const sx of [-1, 1]) {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.08, 10), new THREE.MeshLambertMaterial({ color: 0x2a2a2a }));
+    base.position.set(x + sx * (w + 0.25), by + 2.74, zIn - dir * 0.0);
+    L.group.add(base);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.22, 10), new THREE.MeshBasicMaterial({ color: 0xffb020 }));
+    cap.position.set(x + sx * (w + 0.25), by + 2.89, zIn);
+    L.group.add(cap);
+    lamps.push({ m: cap, beacon: true, on: 0xffc030, off: 0x6a4a10 });
+  }
+  // ベルト脇の誘導灯（終点へ向かって順に流れる）
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    const z = zIn - dir * (1.2 + i * 1.2);
+    for (const sx of [-1, 1]) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.3), new THREE.MeshBasicMaterial({ color: 0x5a4410 }));
+      m.position.set(x + sx * (h + 0.16), by + 0.24, z);
+      L.group.add(m);
+      lamps.push({ m, i: n - 1 - i, on: 0xffd060, off: 0x3a2c0c });
+    }
+  }
+  L.__exitLamps = lamps;
+  // 口の前を照らす灯りと、奥の明かり
+  L.fixtures.push({ pos: new THREE.Vector3(x, by + 3.1, zIn - dir * 1.6), tone: 'spot' });
+  L.fixtures.push({ pos: new THREE.Vector3(x, by + 1.0, zBack - dir * 0.4), tone: 'warm' });
+}
+// 搬出口の灯り：回転灯は明滅、誘導灯は口へ向かって順に点く
+function updateLaneExitLamps(ln) {
+  const t = STG.t;
+  for (const l of ln.exit.lamps) {
+    let on;
+    if (l.beacon) on = Math.sin(t * 6 + l.m.position.x) > 0;
+    else on = ((Math.floor(t * 6) - l.i) % 9 + 9) % 9 < 2;
+    l.m.material.color.setHex(on ? l.on : l.off);
+  }
+}
+
 function buildConveyor(L, cv) {
   const B = L.batches, X = L.X, Z = L.Z;
   const room = L.spaces.find((s) => s.id === cv.room);
@@ -1592,37 +1692,16 @@ function buildConveyor(L, cv) {
     // 粉砕機（進む先の端）と、死体の出てくる口（反対の端）
     const kill = ln.dir < 0 ? z0 : z1, feed = ln.dir < 0 ? z1 : z0;
     const kIn = kill - ln.dir * cv.killMargin;       // ここから先が粉砕機の口
-    const hz0 = Math.min(kIn, kill + ln.dir * 1.2), hz1 = Math.max(kIn, kill + ln.dir * 1.2);
-    addBox(B.metal, x - h - 0.5, x + h + 0.5, fy, by + 2.4, hz0, hz1, 0x4a3c32);
-    const mouthZ = kIn - ln.dir * 0.02;
-    const mouth = new THREE.Mesh(new THREE.PlaneGeometry(h * 2, 1.0), new THREE.MeshBasicMaterial({ color: 0x050303 }));
-    mouth.position.set(x, by + 0.55, mouthZ); mouth.rotation.y = ln.dir < 0 ? 0 : Math.PI;
-    L.group.add(mouth);
-    const stripe = new THREE.Mesh(new THREE.PlaneGeometry(h * 2 + 1, 0.3), new THREE.MeshLambertMaterial({ map: (() => { const t = hazardTexture().clone(); t.needsUpdate = true; t.wrapS = THREE.RepeatWrapping; t.repeat.set(2, 1); return t; })() }));
-    stripe.position.set(x, by + 1.25, mouthZ); stripe.rotation.y = mouth.rotation.y;
-    L.group.add(stripe);
-    const drums = [];
-    for (const dy of [0.25, 0.85]) {
-      const d = new THREE.Group();
-      const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, h * 2 - 0.1, 10), new THREE.MeshLambertMaterial({ color: 0x5e6264 }));
-      cyl.rotation.z = Math.PI / 2; d.add(cyl);
-      for (let k = 0; k < 8; k++) {
-        const tooth = new THREE.Mesh(new THREE.BoxGeometry(h * 2 - 0.1, 0.07, 0.1), new THREE.MeshLambertMaterial({ color: 0x9a9ea0 }));
-        tooth.position.set(0, Math.cos(k / 8 * Math.PI * 2) * 0.23, Math.sin(k / 8 * Math.PI * 2) * 0.23);
-        tooth.rotation.x = k / 8 * Math.PI * 2;
-        d.add(tooth);
-      }
-      d.position.set(x, by + dy, kIn - ln.dir * 0.25);
-      L.group.add(d);
-      drums.push(d);
-    }
+    let drums = [];
+    if (ln.exit) buildLaneExit(L, cv, ln, x, h, by, fy, kill, kIn);
+    else drums = buildLaneCrusher(L, cv, ln, x, h, by, fy, kill, kIn);
     // 口（ビニールのすだれ）
     const fz0 = Math.min(feed, feed - ln.dir * 1.0), fz1 = Math.max(feed, feed - ln.dir * 1.0);
     addBox(B.concrete, x - h - 0.4, x + h + 0.4, by + 1.6, by + 2.6, fz0, fz1, 0x3c3a36);
     for (let k = -3; k <= 3; k++) addBox(B.dark, x + k * 0.24 - 0.1, x + k * 0.24 + 0.1, by + 0.05, by + 1.6, feed - ln.dir * 0.5 - 0.01, feed - ln.dir * 0.5 + 0.01, 0x1a1c1a, { grime: 0 });
     L.conv.lanes.push({ def: ln, x, dir: ln.dir, speed: ln.speed, gap: ln.gap, tex, drums,
-      kill, kIn, feed, start: feed - ln.dir * 0.6, bodies: [] });
-    L.fixtures.push({ pos: new THREE.Vector3(x, by + 2.2, kIn - ln.dir * 0.6), tone: 'red' });
+      kill, kIn, feed, start: feed - ln.dir * 0.6, bodies: [], exit: ln.exit ? Object.assign({}, ln.exit, { lamps: L.__exitLamps || [] }) : null });
+    L.__exitLamps = null;
   }
   // ベルトは頭だけが歩ける
   for (const ln of L.conv.lanes) {
@@ -2136,7 +2215,7 @@ function despawnDynamic() {
   if (L.conv) for (const ln of L.conv.lanes) ln.bodies = [];
   if (L.frame) for (const k of ['LEFT', 'RIGHT']) if (L.frame.hung[k]) { L.group.remove(L.frame.hung[k]); L.frame.hung[k] = null; }
   STG.arm01 = null; STG.armRespawnT = 0;
-  STG.tagParts = {}; STG.tagRespawn = {}; STG.specRespawn = 0;
+  STG.tagParts = {}; STG.tagRespawn = {}; STG.specRespawn = 0; STG.supplyT = 0;
 }
 
 function armsFrom(list) {
@@ -2338,6 +2417,84 @@ function findTaggedArm(tag) {
   if (STG.busy && STG.busy.kind === 'submit' && STG.busy.tag === tag) return { where: 'submit' };
   return null;
 }
+/* ---------- 予備腕の支給（腕を使い切っても詰まないように） ----------
+   今いる場所で手に入る「壊れていない番号なしの通常腕」が2本（バルブを回せる両腕ぶん）より少ない状態が
+   しばらく続いたら、近くの支給口に足りない本数だけ置く。数えるのは自分の腕・床の腕・乗り移れる死体の腕
+   （ベルトの上の死体は数えない）。閉じたアリーナの中では、アリーナの中にある物だけを数え、中の支給口に置く。
+   2本を超えては増えないので、壊すたびに無制限に増えることはない */
+function supplyFistCount(zone) {
+  const inZ = (x, z) => !zone || (x >= zone.x0 && x <= zone.x1 && z >= zone.z0 && z <= zone.z1);
+  const ok = (a) => a && !a.lost && a.kind === ARM.FIST && !a.purged && !a.tag;
+  let n = 0;
+  if (state !== S.HEAD) for (const s of ['LEFT', 'RIGHT']) if (ok(player.arms[s])) n++;   // 頭だけのときは捨てた体（死体）の側で数える
+  for (const p of severedParts) if (p.phase === 'grounded' && ok(p.armState) && inZ(p.obj.position.x, p.obj.position.z)) n++;
+  for (const g of graftArms) if (ok(g.armState)) n++;
+  for (const c of corpses) {
+    if (c.belt || c.occupied || c.assembled || !c.arms) continue;
+    if (!inZ(c.group.position.x, c.group.position.z)) continue;
+    for (const s of ['LEFT', 'RIGHT']) if (ok(c.arms[s])) n++;
+  }
+  return n;
+}
+function updateArmSupply(dt) {
+  const L = STG.L;
+  if (!L.supply || !L.supply.length || STG.fade || STG.dead > 0) return;
+  // 閉じたアリーナの中にいれば、その中だけで考える
+  let zone = null;
+  for (const id in STG.enc) {
+    const rt = STG.enc[id];
+    if (rt.state === 'active' && rt.def.type === 'arena' && inR(rt.zone, playerPos.x, playerPos.z)) zone = rt.zone;
+  }
+  const have = supplyFistCount(zone);
+  if (have >= 2) { STG.supplyT = 0; return; }
+  STG.supplyT = (STG.supplyT || 0) + dt;
+  if (STG.supplyT < STAGE_CFG.supplyDelay) return;
+  STG.supplyT = 0;
+  const cand = L.supply.filter((sp) => !zone || inR(zone, sp.pos.x, sp.pos.z));
+  if (!cand.length) return;
+  // 今いる空間の支給口を優先し、なければ一番近いもの
+  const here = L.spaces.find((sp) => sp.type !== 'view' && inR(sp, playerPos.x, playerPos.z));
+  let best = null, bd = 1e9;
+  for (const sp of cand) {
+    const d = Math.hypot(sp.pos.x - playerPos.x, sp.pos.z - playerPos.z) - (here && sp.space === here.id ? 1000 : 0);
+    if (d < bd) { bd = d; best = sp; }
+  }
+  for (let k = 0; k < 2 - have; k++) {
+    const part = spawnGroundArm(ARM.FIST, best.pos.x + best.side[0] * (k - 0.5) * 0.7, best.pos.z + best.side[1] * (k - 0.5) * 0.7, 0.12);
+    part.supply = true;
+  }
+  best.lamp.material.color.setHex(0xffd060);
+  best.lampT = 6;
+  sfx('equip');
+  stageMsg('支給口：予備の通常腕を補充しました。（' + (best.name || '最寄りの支給口') + '）', 3.2);
+}
+function updateSupplyLamps(rdt) {
+  for (const sp of STG.L.supply || []) {
+    if (!(sp.lampT > 0)) continue;
+    sp.lampT -= rdt;
+    sp.lamp.material.color.setHex(sp.lampT > 0 && Math.sin(sp.lampT * 10) > -0.3 ? 0xffd060 : 0x4a3a10);
+  }
+}
+// 支給口（壁の小さな扉付きの箱と札）。腕は前の床に出てくる
+function buildArmSupply(L) {
+  const def = L.def, B = L.batches;
+  L.supply = [];
+  for (const d of def.armSupply || []) {
+    const F = propFrame(L, { x: d.x, z: d.z, face: d.face });
+    const [fx, fz] = faceVec(d.face);
+    lbox(B.metal, F, -0.5, 0.5, 0.75, 1.55, 0, 0.32, 0x55604e);
+    lbox(B.dark, F, -0.38, 0.38, 0.85, 1.42, 0.32, 0.34, 0x22261f);
+    const [tx, ty, tz] = F.at(0, 1.82, 0.03);
+    textPlane(L, ['予備腕 支給口'], 'plate', 1.3, 0.3, tx, ty, tz, d.face);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0x4a3a10 }));
+    const [lx, ly, lz] = F.at(0.42, 1.62, 0.33);
+    lamp.position.set(lx, ly, lz);
+    L.group.add(lamp);
+    L.supply.push({ pos: new THREE.Vector3(F.x + fx * 0.9, 0, F.z + fz * 0.9), side: [fz, -fx], lamp,
+      space: d.space || (L.spaces.find((sp) => sp.type !== 'view' && inR(sp, F.x + fx * 0.9, F.z + fz * 0.9)) || {}).id, name: d.name });
+  }
+}
+
 // 番号の腕が壊れて世界のどこにも無くなったら、決まった場所に1本だけ補充する
 function updateTaggedArm(dt) {
   const P = STG.prog, ac = STG.def.armCheck;
@@ -2355,31 +2512,48 @@ function updateTaggedArm(dt) {
     else announce((t.label || t.tag) + ' の損壊を確認。予備を補充しました。', 3.2);
   }
 }
-function crusherCondition() {
-  if (state !== S.HUMAN) return '人間の体でなければ提出できない';
-  return true;
+// 指定の腕の照合。腕の番号（と腕そのものの左右＝右腕01 など）で見る。どちらの手に付けていてもよい
+// 戻り値：{ side } ＝提出できる手 ／ { reason, short, crt } ＝できない理由
+function submitCheck() {
+  const ac = STG.def.armCheck;
+  const need = armCheckName();
+  if (state !== S.HUMAN) return { reason: '人間の体でなければ提出できない', short: '人間の体で提出する', crt: null };
+  let other = null;
+  for (const s of ['LEFT', 'RIGHT']) {
+    const a = player.arms[s];
+    if (a.lost || a.tag !== ac.tag) continue;
+    if (a.purged || (ac.kind && a.kind !== ac.kind)) return { reason: '指定腕が破損しています（' + need + '）', short: need + 'が破損している', crt: '破損' };
+    return { side: s };
+  }
+  for (const s of ['LEFT', 'RIGHT']) { const a = player.arms[s]; if (!a.lost && a.tag) other = a.tag; }
+  if (other) return { reason: '指定番号の腕ではありません（装備 ' + tagLabel(other) + '／必要 ' + need + '）', short: need + 'が必要（装備 ' + tagLabel(other) + '）', crt: '番号 ' + tagLabel(other) };
+  return { reason: '必要な腕は' + need + 'です', short: need + 'が必要（未装備）', crt: '番号なし' };
+}
+function armCheckName() {
+  const ac = STG.def.armCheck;
+  return ac.label || ('番号' + ac.tag + 'の腕');
+}
+// 照合装置のプロンプト：持っていれば「右腕01を搬入する」、なければ足りないものを出す
+function submitLabel() {
+  const ac = STG.def.armCheck;
+  const r = submitCheck();
+  if (r.side) return armCheckName() + 'を' + (ac.mode === 'store' ? '搬入する' : '提出する');
+  return r.short;
 }
 function startSubmit() {
   const ac = STG.def.armCheck, L = STG.L;
-  const ok = crusherCondition();
-  if (ok !== true) { stageMsg(PLAYER_SPEAKER + '：' + ok); return; }
-  let side = null, other = null, wrongSide = null;
-  for (const s of ['LEFT', 'RIGHT']) {
-    const a = player.arms[s];
-    if (a.lost) continue;
-    if (a.tag === ac.tag) { if (ac.side && s !== ac.side) wrongSide = s; else side = s; }
-    else if (a.tag) other = a.tag;
-  }
+  const r = submitCheck();
   const dev = ac.device || '照合装置';
-  if (!side) {
-    L.armCrt.set(['MISMATCH', wrongSide ? '左右が違う' : other ? '検体 ' + other : '検体番号なし'], '#ff6b5e');
-    stageMsg(wrongSide ? dev + '：' + (ac.label || ac.tag) + 'は' + (ac.side === 'RIGHT' ? '右腕' : '左腕') + 'として装着してください。'
-           : other ? dev + '：指定外の検体番号です。（指定 ' + (ac.label || ac.tag) + '）'
-                   : dev + '：検体番号 ' + (ac.label || ac.tag) + ' の腕を装着して投入してください。', 3.0);
+  if (!r.side) {
+    if (r.crt) {
+      L.armCrt.set(['MISMATCH', r.crt], '#ff6b5e');
+      STG.crtResetT = 2.4;
+    }
+    stageMsg(dev + '：' + r.reason + '。', 3.0);
     sfx('bonk');
-    STG.crtResetT = 2.4;
     return;
   }
+  const side = r.side;
   cancelCurrentAction();
   const st = player.arms[side];
   const hand = fpHands[side];
@@ -2487,19 +2661,27 @@ function slotNeed(side) {
   const n = STG.def.assemble.need[side];
   return typeof n === 'string' ? { kind: n } : n;
 }
+// 掛け金 side に掛ける腕。左右どちらの手の腕でもよい（指定に合う方。両方合えば同じ側の手）
+function slotHand(side) {
+  const need = slotNeed(side);
+  const fits = (a) => !a.lost && (!need.kind || (a.kind === need.kind && !(need.kind === ARM.FIST && a.purged))) && (!need.tag || a.tag === need.tag);
+  const other = side === 'LEFT' ? 'RIGHT' : 'LEFT';
+  if (fits(player.arms[side])) return side;
+  if (fits(player.arms[other])) return other;
+  return null;
+}
 function slotCondition(side) {
   const need = slotNeed(side);
-  const a = player.arms[side];
   const jp = side === 'LEFT' ? '左腕' : '右腕';
   if (state !== S.HUMAN) return '人間の体でなければ置けない';
-  if (a.lost) return jp + 'がない';
-  if (need.kind && (a.kind !== need.kind || (need.kind === ARM.FIST && a.purged))) {
-    return jp + 'は' + KIND_JP[need.kind] + 'でなければならない（今は' + (a.purged ? '手首のない腕' : KIND_JP[a.kind]) + '）';
+  if (slotHand(side)) return true;
+  const arms = ['LEFT', 'RIGHT'].map((s) => player.arms[s]).filter((a) => !a.lost);
+  if (!arms.length) return '腕がない';
+  if (need.tag) {
+    const tags = arms.filter((a) => a.tag).map((a) => tagLabel(a.tag));
+    return jp + 'の掛け金には指定番号 ' + tagLabel(need.tag) + ' の腕が必要（今は' + (tags.length ? tags.join('・') : '番号なし') + '）';
   }
-  if (need.tag && a.tag !== need.tag) {
-    return jp + 'は指定番号 ' + tagLabel(need.tag) + ' でなければならない（今は' + (a.tag ? tagLabel(a.tag) : '番号なし') + '）';
-  }
-  return true;
+  return jp + 'の掛け金には' + KIND_JP[need.kind] + 'が必要（今は' + arms.map((a) => a.purged ? '手首のない腕' : KIND_JP[a.kind]).join('・') + '）';
 }
 // 装置に預けた腕を台座へ転送する（M1 の右腕01 → M4）
 function startSlotFromStore(side) {
@@ -2519,14 +2701,15 @@ function startSlot(side) {
   const ok = slotCondition(side);
   if (ok !== true) { stageMsg('再構成装置：' + ok + '。', 2.8); sfx('bonk'); return; }
   cancelCurrentAction();
-  const st = cloneArmState(player.arms[side]);
+  const hand = slotHand(side);                         // 実際に外す手（掛け金と逆の手のこともある）
+  const st = cloneArmState(player.arms[hand]);
   const from = new THREE.Vector3();
-  fpHands[side].userData.fist.getWorldPosition(from);
+  fpHands[hand].userData.fist.getWorldPosition(from);
   const ghost = buildRackArm(st.kind);
   ghost.position.copy(from);
   scene.add(ghost);
-  player.arms[side] = makeArmState(ARM.FIST, { lost: true });
-  gunHold[side] = false; mouseHold[side] = null;
+  player.arms[hand] = makeArmState(ARM.FIST, { lost: true });
+  gunHold[hand] = false; mouseHold[hand] = null;
   updateArmVisuals();
   STG.busy = { kind: 'submit', what: 'slot', side, st, t: 0, ghost, from, to: STG.L.frame.slot[side].clone() };
   sfx('equip');
@@ -2677,17 +2860,17 @@ function updateConveyor(wdt, rdt) {
   for (const ln of cv.lanes) {
     ln.tex.offset.y += ln.dir * ln.speed * wdt / 2;
     for (const d of ln.drums) d.rotation.x += ln.dir * rdt * 6;
+    if (ln.exit) updateLaneExitLamps(ln);
     for (const c of ln.bodies.slice()) {
       c.belt.z += ln.dir * ln.speed * wdt;
       c.group.position.z = c.belt.z;
       const past = ln.dir < 0 ? c.belt.z <= ln.kIn : c.belt.z >= ln.kIn;
       if (!past) continue;
       ln.bodies.splice(ln.bodies.indexOf(c), 1);
-      // 仕分け機：指定の検体だけ搬出口へ下ろし、ほかは粉砕する
-      const spec = STG.def.specimen;
-      if (ln.def.sort && spec && c.bodyTag === spec.tag) {
-        if (c.occupied) releaseSpecimen(c);
-        else if (corpses.indexOf(c) >= 0) removeCorpse(c);   // 誰も乗っていなければ回収されずに戻る（あとで再供給）
+      // 搬出口：粉砕せずに次の区画へ送る。乗っていれば搬出台で拘束が外れる
+      if (ln.exit) {
+        if (c.occupied) releaseAtExit(c, ln);
+        else if (corpses.indexOf(c) >= 0) removeCorpse(c);   // 誰も乗っていない体は運び出される（検体12ならあとで再供給）
         continue;
       }
       // 粉砕機に入った
@@ -2707,7 +2890,12 @@ function updateConveyor(wdt, rdt) {
       playerPos.z += ln.dir * ln.speed * wdt;
       playerPos.y = cv.by;
       const past = ln.dir < 0 ? playerPos.z <= ln.kIn + 0.3 : playerPos.z >= ln.kIn - 0.3;
-      if (past) {
+      if (past && ln.exit) {
+        // 搬出口から頭だけで出てきた
+        const at = laneExitAt(ln);
+        playerPos.set(at[0], 0, at[1]);
+        addShake(0.25);
+      } else if (past) {
         spawnFleshBurst(headPos, 8, 2.4, null, 1.2);
         killPlayerHead();
         STG.crushed = true;
@@ -2781,15 +2969,24 @@ function findSpecimen() {
   return null;
 }
 // 搬出口に着いた：拘束が外れ、その体で自由に動ける
-function releaseSpecimen(c) {
-  const spec = STG.def.specimen, L = STG.L;
+// 搬出口の先（搬出台）。ワールド座標 [x, z]
+function laneExitAt(ln) {
+  const L = STG.L, e = ln.exit, sp = STG.def.specimen;
+  const a = e.unloadAt || (sp && sp.unloadAt);
+  return [L.X(a[0]), L.Z(a[1])];
+}
+// 搬出口を通った：拘束が外れ、その体のまま搬出台で動ける（粉砕はされない）
+function releaseAtExit(c, ln) {
+  const spec = STG.def.specimen, e = ln.exit;
   if (corpses.indexOf(c) >= 0) removeCorpse(c);
   STG.strap = null;
   state = S.HUMAN;
-  playerPos.set(L.X(spec.unloadAt[0]), 0, L.Z(spec.unloadAt[1]));
-  yaw = spec.unloadYaw || 0; pitch = 0;
+  const at = laneExitAt(ln);
+  playerPos.set(at[0], 0, at[1]);
+  yaw = e.unloadYaw != null ? e.unloadYaw : (spec && spec.unloadYaw) || 0; pitch = 0;
   addShake(0.4); doFlash(0.3, '#ffe9a0'); sfx('lock');
-  announce(spec.releaseLine || ('検体' + spec.tag + '、搬出を確認。組立区画へ移送してください。'));
+  if (spec && player.bodyTag === spec.tag) announce(spec.releaseLine || ('検体' + spec.tag + '、搬出を確認。組立区画へ移送してください。'));
+  else if (spec) announce('搬出口：検体番号' + (player.bodyTag || 'なし') + '。指定の検体（' + spec.tag + '）ではありません。');
 }
 function registerSpecimen() {
   const spec = STG.def.specimen;
@@ -2999,7 +3196,7 @@ function stageCandidates() {
     }
     // 照合装置
     if (def.armCheck && isCurrent('armCheck')) {
-      out.push({ pos: L.crusher.slot, range: def.armCheck.crusher.r, label: def.armCheck.prompt || '腕を提出する', act: startSubmit });
+      out.push({ pos: L.crusher.slot, range: def.armCheck.crusher.r, label: submitLabel(), act: startSubmit });
     }
     // 検体の登録装置（ミッション：搬送中の検体を回収）
     if (def.specimen && isCurrent('specimen')) {
@@ -3231,7 +3428,10 @@ function stageObjective() {
   }
   if (m.type === 'specimen') {
     const sp = def.specimen, where = findSpecimen();
-    if (state === S.STRAPPED && player.bodyTag === sp.tag) return { text: '検体' + sp.tag + 'のまま搬出口まで運ばれる', goal: at(L.X(sp.unloadAt[0]), L.Z(sp.unloadAt[1])) };
+    if (state === S.STRAPPED && player.bodyTag === sp.tag) {
+      const ex = L.conv && L.conv.lanes.find((q) => q.exit);
+      return { text: '検体' + sp.tag + 'のまま搬出口まで運ばれる', goal: ex ? at(ex.x, ex.kIn) : at(L.X(sp.unloadAt[0]), L.Z(sp.unloadAt[1])) };
+    }
     if (where && where.where === 'player') return { text: '検体' + sp.tag + 'の体で組立区画の登録装置へ向かう', goal: at(L.X(sp.register.x), L.Z(sp.register.z)) };
     return { text: '搬送ライン上の検体' + sp.tag + 'を探して接着する', goal: where && where.pos ? _stGoal.copy(where.pos) : null };
   }
@@ -3330,6 +3530,8 @@ function updateStage(dt, rdt, wdt) {
     }
     if (L.conv) updateConveyor(wdt, rdt);
     updateTaggedArm(dt);
+    updateArmSupply(dt);
+    updateSupplyLamps(rdt);
     updateSpecimen(dt);
     if (L.mega) updateMega(rdt);
     for (const d of L.decoBelts || []) d.update(rdt);
