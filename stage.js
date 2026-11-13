@@ -394,6 +394,7 @@ function buildLevel(def) {
       sp.h = STAGE_CFG.corridorWall + sp.r;
     }
     if (sp.type === 'duct') sp.h = 1.5;
+    if (sp.type === 'catwalk') sp.h = 3.0;
     if (sp.type === 'doorway') sp.h = 2.4;
     L.spaces.push(sp);
     const walk = (sp.walk !== false) && sp.type !== 'view';
@@ -423,7 +424,11 @@ function buildLevel(def) {
     }
   }
   for (const g of L.gas) buildGas(L, g);
+  // 壁を補う箱（通路が部屋の壁を貫く所の上下など）
+  for (const f of (def.fills || [])) addBox(L.batches.concrete, f[0] + ox, f[1] + ox, f[2], f[3], f[4] + oz, f[5] + oz, COL.wall, { lowDark: true });
   buildGimmicks(L);
+  for (const d of (def.decoBelts || [])) buildDecoBelt(L, d);
+  if (def.mega) buildMega(L, def.mega);
 
   for (const key of Object.keys(L.batches)) for (const m of L.batches[key].meshes()) L.group.add(m);
   L.batches = null;   // 頂点の配列はもう要らない
@@ -459,6 +464,7 @@ function buildSpace(L, sp) {
   const cx = (sp.x0 + sp.x1) / 2, cz = (sp.z0 + sp.z1) / 2;
 
   if (sp.type === 'duct') { buildDuct(L, sp); return; }
+  if (sp.type === 'catwalk') { buildCatwalk(L, sp); return; }
   if (sp.type === 'doorway') { buildDoorway(L, sp); return; }
 
   // --- 床 ---
@@ -1213,6 +1219,51 @@ function buildProp(L, p) {
       break;
     }
     case 'frame': buildFrameBody(L, F, p); break;
+    case 'inspector': buildInspectorBody(L, F, p); break;
+    case 'terminal': {
+      lbox(B.metal, F, -0.6, 0.6, 0, 1.0, -0.35, 0.35, 0x4f544e);
+      lbox(B.metal, F, -0.6, 0.6, 1.0, 1.08, -0.4, 0.4, 0x3a3e3a);
+      const [x, , z] = F.at(0, 0, -0.05);
+      const crt = makeCrt(L, x, 1.42, z, F.yaw, 0.5, p.lines || ['検体登録', '番号を照合'], {});
+      if (p.id) (L.crts || (L.crts = {}))[p.id] = crt;
+      addSolid(L, F, 1.2, 0.7);
+      break;
+    }
+    case 'lift': {
+      lbox(B.dark, F, -1.1, 1.1, 0, 0.06, -1.1, 1.1, 0x232628);
+      for (const sx of [-1, 1]) lbox(B.metal, F, sx * 1.15 - 0.06, sx * 1.15 + 0.06, 0, 3.4, -1.15, -1.0, 0x6a6e40);
+      lbox(B.glow, F, -1.1, 1.1, 0.06, 0.08, -1.12, -1.05, 0xd4a81e, { grime: 0 });
+      break;
+    }
+    case 'armpile': {
+      // 廃棄された腕の山（見るだけ）
+      for (let i = 0; i < (p.n || 40); i++) {
+        const a = hash3(i, F.x, 7) * Math.PI * 2, r = hash3(i, F.z, 3) * (p.r || 1.4);
+        const lx = Math.cos(a) * r, lz = Math.sin(a) * r, y = 0.08 + (1 - r / (p.r || 1.4)) * 0.9 * hash3(i, 2, 9);
+        const g = new THREE.BoxGeometry(0.15, 0.15, 0.78);
+        const [x, , z] = F.at(lx, 0, lz);
+        B.wood.add(g, m4At(x, y, z, a * 1.7, (hash3(i, 5, 5) - 0.5) * 0.8), hash3(i, 1, 1) < 0.5 ? 0x8a5e52 : 0x6e4a44, { grime: 0.4 });
+        g.dispose();
+      }
+      break;
+    }
+    case 'gauge': {
+      const [x, , z] = F.at(0, 0, 0.02);
+      ldisc(B.glow, F, 0, p.y || 1.8, 0.01, 0.2, 0xd9d3bd);
+      const needle = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.17, 0.01), new THREE.MeshBasicMaterial({ color: 0x9a1e18 }));
+      needle.geometry.translate(0, 0.075, 0);
+      needle.position.set(x, p.y || 1.8, z);
+      needle.rotation.order = 'YXZ';
+      needle.rotation.y = F.yaw;
+      L.group.add(needle);
+      const ph = hash3(F.x, F.z, 4) * 6;
+      (L.gauges || (L.gauges = [])).push({ update: (dt) => {
+        const m = L.mega;
+        const level = m && m.on ? Math.min(1, m.t / 3) : (m && m.partialOn ? 0.35 : 0.02);
+        needle.rotation.z = 1.2 - level * 2.2 + Math.sin(STG.t * (2 + level * 9) + ph) * 0.06 * (0.3 + level);
+      } });
+      break;
+    }
     case 'board': buildBoard(L, F, p); break;
     case 'switch': buildSwitchBody(L, F, p); break;
   }
@@ -1321,12 +1372,24 @@ function buildFrameBody(L, F, p) {
       TORSO: new THREE.Vector3(...F.at(0, 1.1, 0.4)),
     },
     hung: { LEFT: null, RIGHT: null },
+    lamps: null,
   };
+  // 部位ごとの状態ランプ（1-2）。付けるたびに点く
+  if (L.def.assemble && L.def.assemble.lamps) {
+    L.frame.lamps = {};
+    for (const [k, lx, ly] of [['LEFT', 1.15, 2.42], ['RIGHT', -1.15, 2.42], ['TORSO', 0, 2.62]]) {
+      const lm = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshBasicMaterial({ color: 0x3a1410 }));
+      lm.position.set(...F.at(lx, ly, -0.36));
+      L.group.add(lm);
+      L.frame.lamps[k] = lm;
+    }
+  }
   addSolid(L, F, 2.6, 1.2);
 }
 
 // 完成させる身体の写真（紙の指示書）。体は正面を向いているので、写真の左側が右腕
 function buildBoard(L, F, p) {
+  if (p.rows) { buildRowBoard(L, F, p); return; }
   const tex = canvasTex(512, 384, (c, W, H) => {
     c.fillStyle = '#2a2622'; c.fillRect(0, 0, W, H);
     c.fillStyle = '#d6cdb2'; c.fillRect(14, 14, W - 28, H - 28);
@@ -1355,6 +1418,33 @@ function buildBoard(L, F, p) {
     c.fillStyle = 'rgba(160,30,24,0.8)'; c.font = 'bold 22px ' + JP_GOTH;
     c.fillText('検', W - 70, 22);
     c.strokeStyle = 'rgba(160,30,24,0.8)'; c.lineWidth = 3; c.strokeRect(W - 78, 16, 40, 40);
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.2), new THREE.MeshLambertMaterial({ map: tex }));
+  m.position.set(F.x, p.y, F.z);
+  m.rotation.y = FACE_YAW[p.face];
+  L.group.add(m);
+}
+
+// 表の指示書（1-2）。部位ごとに指定を並べる
+function buildRowBoard(L, F, p) {
+  const tex = canvasTex(512, 384, (c, W, H) => {
+    c.fillStyle = '#2a2622'; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#d6cdb2'; c.fillRect(14, 14, W - 28, H - 28);
+    c.fillStyle = '#3a3026'; c.textAlign = 'left'; c.textBaseline = 'top';
+    c.font = 'bold 26px ' + JP_FONT; c.fillText(p.title || '組立指示書', 30, 26);
+    c.strokeStyle = '#3a3026'; c.lineWidth = 2;
+    const top = 76, rh = 64;
+    p.rows.forEach((r, i) => {
+      const y = top + i * rh;
+      c.strokeRect(30, y, W - 60, rh);
+      c.beginPath(); c.moveTo(140, y); c.lineTo(140, y + rh); c.stroke();
+      c.font = 'bold 28px ' + JP_GOTH; c.fillText(r[0], 46, y + 16);
+      c.fillText(r[1], 160, y + 16);
+    });
+    c.font = '17px ' + JP_FONT;
+    (p.notes || []).forEach((t, i) => c.fillText(t, 30, top + p.rows.length * rh + 18 + i * 26));
+    c.strokeStyle = 'rgba(160,30,24,0.8)'; c.lineWidth = 3; c.strokeRect(W - 78, 18, 44, 44);
+    c.fillStyle = 'rgba(160,30,24,0.8)'; c.font = 'bold 24px ' + JP_GOTH; c.fillText('検', W - 68, 26);
   });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.2), new THREE.MeshLambertMaterial({ map: tex }));
   m.position.set(F.x, p.y, F.z);
@@ -1721,6 +1811,8 @@ function stageEnterArea(id, opts) {
   if (def.kind === 'stage') {
     STG.prog = newProgress(def);
     STG.selected = null;
+    STG.briefMi = -1; STG.briefDelay = 3.6; STG.briefPending = false;
+    if (STG.L.mega) resetMega();
     syncGimmickVisuals();
     respawnAtCheckpoint(true);
     stageMsg(def.label + '　' + def.title, 3.2);
@@ -1738,6 +1830,7 @@ function stageEnterArea(id, opts) {
 // ステージから出る（resetAll から呼ばれる）。敵・死体・床の腕を片付けて建物を下げる
 function stageStop() {
   if (!STG.area) return;
+  stopHum();
   despawnDynamic();
   if (STG.L) scene.remove(STG.L.group);
   restoreAtmosphere();
@@ -1965,6 +2058,8 @@ function newProgress(def) {
     done: {}, valves: {}, flags: {}, cleared: {}, opened: {},
     slots: { LEFT: null, RIGHT: null, torso: false },
     finale: false,
+    stored: {},      // 装置に預けた部位（M1 の右腕など）。ミッションをまたいで使う
+    used: {},        // 使い切った番号（粉砕・保管・台座に付けた）。以後は補充しない
   };
 }
 function missionIndex() {
@@ -1976,6 +2071,17 @@ function missionIndex() {
 function currentMission() { const ms = STG.def.missions; return ms[missionIndex()] || null; }
 function allMissionsDone() { return missionIndex() >= STG.def.missions.length; }
 
+// ミッションは種類（type）で呼ぶ。1-1 は A〜D、1-2 は M1〜M6 と ID が違っても同じ仕組みで動く
+function missionOf(type) { return STG.def.missions.find((m) => m.type === type) || null; }
+function isCurrent(type) { const m = currentMission(); return !!m && m.type === type; }
+function typeDone(type) { const m = missionOf(type); return !!m && !!STG.prog.done[m.id]; }
+function completeType(type) { const m = missionOf(type); if (m) completeMission(m.id); }
+// 研究員の放送（字幕）。話者はステージのデータで決める
+function announce(text, dur) {
+  if (!text) return;
+  say((STG.def.speaker || '研究員') + '：' + text, dur || 3.6);
+}
+
 function completeMission(id) {
   const P = STG.prog;
   if (P.done[id]) return;
@@ -1983,6 +2089,8 @@ function completeMission(id) {
   doFlash(0.35, '#9ce8ff');
   addShake(0.3);
   sfx('lock');
+  const m = STG.def.missions.find((q) => q.id === id);
+  if (m && m.doneLine) { announce(m.doneLine); STG.briefDelay = 4.2; }
 }
 
 // 進行どおりに扉・ランプ・CRT・台座の見た目を合わせる
@@ -1996,8 +2104,11 @@ function syncGimmickVisuals() {
     applyDoorPose(d);
   }
   if (L.valves) for (const id in L.valves) setValveLook(L.valves[id], !!P.valves[id]);
-  if (L.armCrt) L.armCrt.set(P.done.B ? ['照合完了', 'ACCEPTED'] : ['REQUIRED ARM', '— ' + def.armCheck.tag + ' —'],
-    P.done.B ? '#9ce8ff' : null);
+  if (L.armCrt) {
+    const ok = typeDone('armCheck');
+    L.armCrt.set(ok ? (def.armCheck.okCrt || ['照合完了', 'ACCEPTED']) : armCrtIdle(), ok ? '#9ce8ff' : null);
+  }
+  if (L.crusher && L.crusher.case) syncStoredArm();
   if (L.frame) syncFrameArms();
   if (L.finaleRows) L.finaleOn = !!P.finale;
 }
@@ -2025,6 +2136,7 @@ function despawnDynamic() {
   if (L.conv) for (const ln of L.conv.lanes) ln.bodies = [];
   if (L.frame) for (const k of ['LEFT', 'RIGHT']) if (L.frame.hung[k]) { L.group.remove(L.frame.hung[k]); L.frame.hung[k] = null; }
   STG.arm01 = null; STG.armRespawnT = 0;
+  STG.tagParts = {}; STG.tagRespawn = {}; STG.specRespawn = 0;
 }
 
 function armsFrom(list) {
@@ -2042,22 +2154,25 @@ function spawnDynamic() {
     });
     cc.stage = true;
   }
-  for (const a of (def.arms || [])) spawnGroundArm(a.kind, L.X(a.x), L.Z(a.z), a.y);
+  for (const a of (def.arms || [])) spawnGroundArm(a.kind, L.X(a.x), L.Z(a.z), a.y, a.tag ? { tag: a.tag, side: a.side } : undefined);
   // ミッションB：指定番号の腕
-  if (def.armCheck && !P.done.B) spawnTaggedArm();
+  for (const t of taggedArmDefs()) if (!P.used[t.tag]) spawnTaggedArm(t);
   // ミッションC：ベルトの死体
   if (L.conv) populateBelts();
   // ミッションD：組み立て済みの体（胴体まで置いたあと）
   if (L.frame) syncFrameArms();
-  if (L.frame && P.slots.torso && !P.done.D) makeAssembledBody();
+  if (L.frame && P.slots.torso && !typeDone('assemble')) makeAssembledBody();
   // 戦闘
   STG.enc = {};
   for (const e of (def.encounters || [])) {
     STG.enc[e.id] = { def: e, state: P.cleared[e.id] ? 'cleared' : 'idle', enemies: [], pending: [], wave: -1,
       zone: absRect(L, e.zone), trigger: absRect(L, e.trigger || e.zone) };
   }
-  // 戦闘中に閉じる扉は開けておく（倒した戦闘はもともと開いている）
-  for (const e of (def.encounters || [])) if (e.doors) for (const id of e.doors) setDoor(id, true, true);
+  // 戦闘で閉じる扉は、本来の状態に戻す（初めから開いている扉・開けた扉・倒した戦闘の扉は開ける）
+  for (const e of (def.encounters || [])) if (e.doors) for (const id of e.doors) {
+    const dd = L.doors[id];
+    if (dd) setDoor(id, !!(dd.def.open || P.opened[id] || P.cleared[e.id]), true);
+  }
 }
 function absRect(L, a) { return { x0: a[0] + L.ox, x1: a[1] + L.ox, z0: a[2] + L.oz, z1: a[3] + L.oz }; }
 
@@ -2143,14 +2258,18 @@ function updateValve(b, dt) {
     STG.busy = null;
     STG.prog.valves[v.def.id] = true;
     if (v.def.flag) STG.prog.flags[v.def.flag] = true;
+    // バルブごとの環境の変化（エアロックが開く・隔壁が開く など）
+    for (const id of (v.def.opens || [])) { setDoor(id, true); STG.prog.opened[id] = true; }
     setValveLook(v, true);
     sfx('lock'); addShake(0.25); doFlash(0.18, '#' + v.def.color.toString(16).padStart(6, '0'));
     const n = Object.keys(STG.prog.valves).length, all = STG.def.valves.length;
+    const gate = STG.def.lockName || '第一閘門';
     if (n >= all) {
       setDoor(STG.def.lockDoor, true); STG.prog.opened[STG.def.lockDoor] = true;
-      completeMission('A');
-      stageMsg('第一閘門：' + all + '系統の圧力を確認。開放します。', 3.2);
-    } else stageMsg('第一閘門：' + v.def.id + '系統 開放（' + n + ' / ' + all + '）', 2.6);
+      completeType('valves');
+      if (!missionOf('valves').doneLine) stageMsg(gate + '：' + all + '系統の圧力を確認。開放します。', 3.2);
+    } else if (v.def.line) announce(v.def.line + '（' + n + ' / ' + all + '）', 3.2);
+    else stageMsg(gate + '：' + v.def.id + '系統 開放（' + n + ' / ' + all + '）', 2.6);
   }
 }
 // バルブを回している手。両手でハンドルの縁を握り、ハンドルと一緒に回る
@@ -2183,11 +2302,32 @@ function stageHandsHook() {
 /* =========================================================
    ミッションB：指定番号の腕と照合装置
    ========================================================= */
-function spawnTaggedArm() {
-  const ac = STG.def.armCheck, L = STG.L;
-  STG.arm01 = spawnGroundArm(ac.kind || ARM.FIST, L.X(ac.pedestal.x), L.Z(ac.pedestal.z), ac.pedestal.y, { tag: ac.tag });
-  STG.arm01.obj.rotation.set(0, 0.4, Math.PI / 2);
-  STG.armRespawnT = 0;
+// 番号付きの腕の一覧。1-2 は taggedArms に並べる。1-1 は armCheck の1本だけ
+function taggedArmDefs() {
+  const def = STG.def;
+  if (def.taggedArms) return def.taggedArms;
+  if (!def.armCheck) return [];
+  const ac = def.armCheck;
+  return [{ tag: ac.tag, kind: ac.kind, at: ac.pedestal, takenFlag: ac.takenFlag, check: true }];
+}
+function tagLabel(tag) {
+  const t = taggedArmDefs().find((q) => q.tag === tag);
+  return (t && t.label) || tag;
+}
+function armCrtIdle() {
+  const ac = STG.def.armCheck;
+  return ac.idleCrt || ['REQUIRED ARM', '— ' + ac.tag + ' —'];
+}
+function spawnTaggedArm(t) {
+  const L = STG.L;
+  const extra = { tag: t.tag };
+  if (t.side) extra.side = t.side;
+  const part = spawnGroundArm(t.kind || ARM.FIST, L.X(t.at.x), L.Z(t.at.z), t.at.y, extra);
+  part.obj.rotation.set(0, 0.4, Math.PI / 2);
+  STG.tagParts[t.tag] = part;
+  STG.tagRespawn[t.tag] = 0;
+  if (t.check || (STG.def.armCheck && t.tag === STG.def.armCheck.tag)) STG.arm01 = part;
+  return part;
 }
 // 番号の腕がいまどこにあるか（無ければ null）
 function findTaggedArm(tag) {
@@ -2198,18 +2338,21 @@ function findTaggedArm(tag) {
   if (STG.busy && STG.busy.kind === 'submit' && STG.busy.tag === tag) return { where: 'submit' };
   return null;
 }
+// 番号の腕が壊れて世界のどこにも無くなったら、決まった場所に1本だけ補充する
 function updateTaggedArm(dt) {
   const P = STG.prog, ac = STG.def.armCheck;
-  if (!ac || P.done.B) return;
-  const at = findTaggedArm(ac.tag);
-  if (at && (at.where === 'player' || at.where === 'graft') && !P.flags[ac.takenFlag]) P.flags[ac.takenFlag] = true;
-  if (at) { STG.armRespawnT = 0; return; }
-  // どこにも無い（腕のHPが0になった・床で消えた）。台座に1本だけ補充する
-  STG.armRespawnT = (STG.armRespawnT || 0) + dt;
-  if (STG.armRespawnT >= STAGE_CFG.armRespawnDelay) {
-    spawnTaggedArm();
-    if (STG.L.armCrt) STG.L.armCrt.set(['予備検体 補充', '— ' + ac.tag + ' —'], '#ffd75e');
-    stageMsg('照合装置：検体 ' + ac.tag + ' の損壊を確認。保管室へ予備を補充しました。', 3.4);
+  for (const t of taggedArmDefs()) {
+    if (P.used[t.tag]) continue;
+    const at = findTaggedArm(t.tag);
+    if (at && t.takenFlag && (at.where === 'player' || at.where === 'graft') && !P.flags[t.takenFlag]) P.flags[t.takenFlag] = true;
+    if (at) { STG.tagRespawn[t.tag] = 0; continue; }
+    STG.tagRespawn[t.tag] = (STG.tagRespawn[t.tag] || 0) + dt;
+    if (STG.tagRespawn[t.tag] < STAGE_CFG.armRespawnDelay) continue;
+    spawnTaggedArm(t);
+    const isCheck = ac && t.tag === ac.tag;
+    if (isCheck && STG.L.armCrt) STG.L.armCrt.set(['予備検体 補充', '— ' + t.tag + ' —'], '#ffd75e');
+    if (isCheck && !STG.def.taggedArms) stageMsg('照合装置：検体 ' + t.tag + ' の損壊を確認。保管室へ予備を補充しました。', 3.4);
+    else announce((t.label || t.tag) + ' の損壊を確認。予備を補充しました。', 3.2);
   }
 }
 function crusherCondition() {
@@ -2220,16 +2363,19 @@ function startSubmit() {
   const ac = STG.def.armCheck, L = STG.L;
   const ok = crusherCondition();
   if (ok !== true) { stageMsg(PLAYER_SPEAKER + '：' + ok); return; }
-  let side = null, other = null;
+  let side = null, other = null, wrongSide = null;
   for (const s of ['LEFT', 'RIGHT']) {
     const a = player.arms[s];
     if (a.lost) continue;
-    if (a.tag === ac.tag) side = s; else if (a.tag) other = a.tag;
+    if (a.tag === ac.tag) { if (ac.side && s !== ac.side) wrongSide = s; else side = s; }
+    else if (a.tag) other = a.tag;
   }
+  const dev = ac.device || '照合装置';
   if (!side) {
-    L.armCrt.set(['MISMATCH', other ? '検体 ' + other : '検体番号なし'], '#ff6b5e');
-    stageMsg(other ? '照合装置：指定外の検体番号です。（指定 ' + ac.tag + '）'
-                   : '照合装置：検体番号 ' + ac.tag + ' の腕を装着して投入してください。', 3.0);
+    L.armCrt.set(['MISMATCH', wrongSide ? '左右が違う' : other ? '検体 ' + other : '検体番号なし'], '#ff6b5e');
+    stageMsg(wrongSide ? dev + '：' + (ac.label || ac.tag) + 'は' + (ac.side === 'RIGHT' ? '右腕' : '左腕') + 'として装着してください。'
+           : other ? dev + '：指定外の検体番号です。（指定 ' + (ac.label || ac.tag) + '）'
+                   : dev + '：検体番号 ' + (ac.label || ac.tag) + ' の腕を装着して投入してください。', 3.0);
     sfx('bonk');
     STG.crtResetT = 2.4;
     return;
@@ -2243,11 +2389,27 @@ function startSubmit() {
   syncArmAddons(ghost, st, 'loose', 1);
   ghost.position.copy(from);
   scene.add(ghost);
+  const kept = cloneArmState(st);
   player.arms[side] = makeArmState(ARM.FIST, { lost: true });
   gunHold[side] = false; mouseHold[side] = null;
   updateArmVisuals();
-  STG.busy = { kind: 'submit', what: 'crusher', tag: ac.tag, side, t: 0, ghost, from, to: L.crusher.slot.clone() };
+  STG.busy = { kind: 'submit', what: 'crusher', tag: ac.tag, side, st: kept, t: 0, ghost, from,
+    to: (ac.mode === 'store' && L.crusher.case) ? L.crusher.case.clone() : L.crusher.slot.clone() };
   sfx('equip');
+}
+// 検査装置のガラスケースに、預けた腕を飾る（M1 → M4 で使う）
+function syncStoredArm() {
+  const L = STG.L, P = STG.prog, ac = STG.def.armCheck, cr = L.crusher;
+  const st = P.stored[ac.tag];
+  const want = !!st && !(P.slots.LEFT && P.slots.LEFT.tag === ac.tag) && !(P.slots.RIGHT && P.slots.RIGHT.tag === ac.tag);
+  if (want && !cr.shown) {
+    const g = buildRackArm(st.kind);
+    syncArmAddons(g, st, 'loose', 1);
+    g.position.copy(cr.case); g.position.y -= 0.42;
+    g.rotation.y = cr.F.yaw;
+    L.group.add(g);
+    cr.shown = g;
+  } else if (!want && cr.shown) { L.group.remove(cr.shown); cr.shown = null; }
 }
 function updateSubmit(b, dt) {
   b.t += dt;
@@ -2259,26 +2421,38 @@ function updateSubmit(b, dt) {
     b.ghost.scale.setScalar(1 - 0.2 * k);
   }
   if (b.what === 'crusher') {
+    const ac = STG.def.armCheck;
+    const store = ac.mode === 'store';
     L.crusher.spin = 1;
     if (b.t >= 0.55 && b.ghost) {
       scene.remove(b.ghost); b.ghost = null;
-      spawnFleshBurst(b.to, 14, 3.2, new THREE.Vector3(0, 1, 0), 2.0);
-      spawnBloodDecal(b.to.x + 0.6, b.to.z, 0.5, 0.7);
-      addShake(0.5); addHitstop(0.08); doFlash(0.3, '#ff7a66'); sfx('break');
-      L.armCrt.set(['照合完了', 'ACCEPTED'], '#9ce8ff');
+      if (store) {
+        // 粉砕せず保管する（ケースに収まる）
+        STG.prog.stored[ac.tag] = b.st;
+        STG.prog.used[ac.tag] = true;
+        syncStoredArm();
+        addShake(0.25); doFlash(0.2, '#9ce8ff'); sfx('lock');
+      } else {
+        STG.prog.used[ac.tag] = true;
+        spawnFleshBurst(b.to, 14, 3.2, new THREE.Vector3(0, 1, 0), 2.0);
+        spawnBloodDecal(b.to.x + 0.6, b.to.z, 0.5, 0.7);
+        addShake(0.5); addHitstop(0.08); doFlash(0.3, '#ff7a66'); sfx('break');
+      }
+      L.armCrt.set(ac.okCrt || ['照合完了', 'ACCEPTED'], '#9ce8ff');
     }
     if (b.t >= 1.5) {
       STG.busy = null;
-      const ac = STG.def.armCheck;
-      setDoor(ac.door, true); STG.prog.opened[ac.door] = true;
-      completeMission('B');
-      stageMsg('照合装置：検体 ' + ac.tag + ' を受理。搬送ラインへの扉を開放します。', 3.2);
+      if (ac.door) { setDoor(ac.door, true); STG.prog.opened[ac.door] = true; }
+      completeType('armCheck');
+      if (!STG.def.taggedArms) stageMsg('照合装置：検体 ' + ac.tag + ' を受理。搬送ラインへの扉を開放します。', 3.2);
     }
   } else if (b.what === 'slot') {
     if (b.t >= 0.5 && b.ghost) {
       scene.remove(b.ghost); b.ghost = null;
       STG.prog.slots[b.side] = b.st;
+      if (b.st.tag) STG.prog.used[b.st.tag] = true;
       syncFrameArms();
+      if (L.crusher && L.crusher.case) syncStoredArm();
       addShake(0.3); doFlash(0.2, '#ffd0b0'); sfx('lock');
       STG.busy = null;
     }
@@ -2301,17 +2475,45 @@ function syncFrameArms() {
       fr.hung[side] = g;
     } else if (!want && fr.hung[side]) { L.group.remove(fr.hung[side]); fr.hung[side] = null; }
   }
+  if (fr.lamps) {
+    fr.lamps.LEFT.material.color.setHex(P.slots.LEFT ? 0x3aff7a : 0x3a1410);
+    fr.lamps.RIGHT.material.color.setHex(P.slots.RIGHT ? 0x3aff7a : 0x3a1410);
+    fr.lamps.TORSO.material.color.setHex(P.slots.torso ? 0x3aff7a : 0x3a1410);
+  }
+}
+// 台座の部位の条件。文字列なら腕の種類だけ、オブジェクトなら { kind, tag }（番号も照合）／
+// { from: 番号 }（装置に預けた腕を取り付ける。自分の腕は要らない）
+function slotNeed(side) {
+  const n = STG.def.assemble.need[side];
+  return typeof n === 'string' ? { kind: n } : n;
 }
 function slotCondition(side) {
-  const need = STG.def.assemble.need[side];
+  const need = slotNeed(side);
   const a = player.arms[side];
   const jp = side === 'LEFT' ? '左腕' : '右腕';
   if (state !== S.HUMAN) return '人間の体でなければ置けない';
   if (a.lost) return jp + 'がない';
-  if (a.kind !== need || (need === ARM.FIST && a.purged)) {
-    return jp + 'は' + KIND_JP[need] + 'でなければならない（今は' + (a.purged ? '手首のない腕' : KIND_JP[a.kind]) + '）';
+  if (need.kind && (a.kind !== need.kind || (need.kind === ARM.FIST && a.purged))) {
+    return jp + 'は' + KIND_JP[need.kind] + 'でなければならない（今は' + (a.purged ? '手首のない腕' : KIND_JP[a.kind]) + '）';
+  }
+  if (need.tag && a.tag !== need.tag) {
+    return jp + 'は指定番号 ' + tagLabel(need.tag) + ' でなければならない（今は' + (a.tag ? tagLabel(a.tag) : '番号なし') + '）';
   }
   return true;
+}
+// 装置に預けた腕を台座へ転送する（M1 の右腕01 → M4）
+function startSlotFromStore(side) {
+  const need = slotNeed(side), P = STG.prog, L = STG.L;
+  const st = P.stored[need.from];
+  if (!st) { stageMsg('再構成装置：' + tagLabel(need.from) + ' が保管されていない。', 2.8); sfx('bonk'); return; }
+  if (state !== S.HUMAN && state !== S.HEAD) return;
+  const ghost = buildRackArm(st.kind);
+  syncArmAddons(ghost, st, 'loose', 1);
+  const from = L.frame.slot[side].clone(); from.y += 2.2;
+  ghost.position.copy(from);
+  scene.add(ghost);
+  STG.busy = { kind: 'submit', what: 'slot', side, st: cloneArmState(st), t: 0, ghost, from, to: L.frame.slot[side].clone() };
+  sfx('equip');
 }
 function startSlot(side) {
   const ok = slotCondition(side);
@@ -2330,9 +2532,10 @@ function startSlot(side) {
   sfx('equip');
 }
 function torsoCondition() {
-  const P = STG.prog;
+  const P = STG.prog, need = STG.def.assemble.need.torso;
   if (state !== S.HUMAN) return '人間の体でなければ据えられない';
   if (!P.slots.LEFT || !P.slots.RIGHT) return '先に両腕を掛けてください';
+  if (need && need.bodyTag && player.bodyTag !== need.bodyTag) return '胴体は検体' + need.bodyTag + 'でなければならない';
   return true;
 }
 function placeTorso() {
@@ -2347,16 +2550,20 @@ function placeTorso() {
   stageForceHead(fr.seat.x + fx * 1.8, fr.seat.z + fz * 1.8, EYE);
   yaw = Math.atan2(fx, fz);   // 台座の方を向く
   addShake(0.45); doFlash(0.35, '#9ce8ff'); sfx('lock');
-  stageMsg('再構成装置：胴体を固定。頭部を接着してください。', 3.0);
+  if (STG.def.assemble.torsoLine) announce(STG.def.assemble.torsoLine);
+  else stageMsg('再構成装置：胴体を固定。頭部を接着してください。', 3.0);
 }
 function makeAssembledBody() {
   const L = STG.L, P = STG.prog, fr = L.frame;
   for (const c of corpses.slice()) if (c.assembled) removeCorpse(c);
+  const need = STG.def.assemble.need.torso;
   const c = createCorpse(fr.seat.x, fr.seat.z - 0.05, fr.F.yaw, {
     arms: { LEFT: cloneArmState(P.slots.LEFT), RIGHT: cloneArmState(P.slots.RIGHT) },
     fuse: null, skill: makeBodySkill(SKILL.HEAL), resMax: 4,
+    bodyTag: need && need.bodyTag ? need.bodyTag : null,
   });
   c.group.position.y = 0.42;
+  if (c.bodyTag) addBodyPlate(c);
   c.assembled = true; c.stage = true;
   return c;
 }
@@ -2388,9 +2595,16 @@ const BELT_ARMS = [['fist', 'fist'], ['fist', 'gun'], ['gun', 'fist'], ['fist', 
 function makeBeltCorpse(ln, z, o) {
   const L = STG.L, cv = L.conv;
   const opts = o || {};
+  // 検体番号。指定の番号（1-2 の検体12）以外は、かぶらない適当な番号
+  let tag = opts.bodyTag;
+  if (tag === undefined && cv.def.numbered) {
+    const spec = STG.def.specimen;
+    do { tag = String(10 + Math.floor(Math.random() * 80)).padStart(2, '0'); } while (spec && tag === spec.tag);
+  }
   const c = createCorpse(ln.x, z, ln.dir < 0 ? Math.PI : 0, {
     arms: opts.arms || armsFrom(BELT_ARMS[Math.floor(Math.random() * BELT_ARMS.length)]),
     fuse: null, hp: opts.hp, skill: opts.skill, resMax: opts.resMax, resource: opts.resource,
+    bodyTag: tag || null,
   });
   // 仰向けに寝かせる（頭は口の側、足は粉砕機の側）
   c.body.rotation.x = -Math.PI / 2;
@@ -2406,8 +2620,29 @@ function makeBeltCorpse(ln, z, o) {
   }
   c.belt = { lane: ln, z };
   c.stage = true;
+  if (c.bodyTag) addBodyPlate(c);
   ln.bodies.push(c);
   return c;
+}
+
+// 体の胸に検体番号の札を付ける（仰向けでも座っていても胸の正面＝体のローカル+Z）
+const _plateTex = {};
+function addBodyPlate(c) {
+  const spec = STG.def && STG.def.specimen;
+  const hot = spec && c.bodyTag === spec.tag;
+  const key = c.bodyTag + (hot ? '*' : '');
+  if (!_plateTex[key]) {
+    _plateTex[key] = canvasTex(128, 96, (g, W, H) => {
+      g.fillStyle = hot ? '#e8d48a' : '#c9c2ae'; g.fillRect(0, 0, W, H);
+      g.strokeStyle = '#3a2a20'; g.lineWidth = 5; g.strokeRect(4, 4, W - 8, H - 8);
+      g.fillStyle = '#1e1a16'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = 'bold 22px ' + JP_GOTH; g.fillText('検体', W / 2, 24);
+      g.font = 'bold 50px ' + JP_GOTH; g.fillText(c.bodyTag, W / 2, 64);
+    });
+  }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.32), new THREE.MeshBasicMaterial({ map: _plateTex[key] }));
+  m.position.set(0, 0.95, 0.225);
+  c.body.add(m);
 }
 function populateBelts() {
   const cv = STG.L.conv;
@@ -2420,6 +2655,15 @@ function populateBelts() {
       makeBeltCorpse(ln, z);
     }
     ln.since = 0;
+  }
+  // 指定の検体（1-2 の検体12）。まだ回収していなければ、決まったベルトに1体だけ流す
+  const spec = STG.def.specimen;
+  if (spec && !typeDone('specimen') && !findSpecimen()) {
+    const ln = cv.lanes[spec.lane];
+    const victim = ln.bodies.slice().sort((a, b) => Math.abs(a.belt.z - ln.start) - Math.abs(b.belt.z - ln.start))[0];
+    const z = victim ? victim.belt.z : ln.start;
+    if (victim) { ln.bodies.splice(ln.bodies.indexOf(victim), 1); removeCorpse(victim); }
+    makeBeltCorpse(ln, z, { bodyTag: spec.tag, arms: armsFrom(spec.arms || ['fist', 'fist']) });
   }
 }
 function beltLaneAt(x, z) {
@@ -2438,8 +2682,15 @@ function updateConveyor(wdt, rdt) {
       c.group.position.z = c.belt.z;
       const past = ln.dir < 0 ? c.belt.z <= ln.kIn : c.belt.z >= ln.kIn;
       if (!past) continue;
-      // 粉砕機に入った
       ln.bodies.splice(ln.bodies.indexOf(c), 1);
+      // 仕分け機：指定の検体だけ搬出口へ下ろし、ほかは粉砕する
+      const spec = STG.def.specimen;
+      if (ln.def.sort && spec && c.bodyTag === spec.tag) {
+        if (c.occupied) releaseSpecimen(c);
+        else if (corpses.indexOf(c) >= 0) removeCorpse(c);   // 誰も乗っていなければ回収されずに戻る（あとで再供給）
+        continue;
+      }
+      // 粉砕機に入った
       const at = new THREE.Vector3(ln.x, cv.by + 0.4, ln.kIn);
       if (corpses.indexOf(c) >= 0) removeCorpse(c);
       spawnFleshBurst(at, 10, 2.6, new THREE.Vector3(0, 1, -ln.dir * 0.5), 1.6);
@@ -2479,6 +2730,7 @@ function stageOnPossessed(c) {
     const nc = makeBeltCorpse(ln, c.belt.z, {
       arms: { LEFT: cloneArmState(player.arms.LEFT), RIGHT: cloneArmState(player.arms.RIGHT) },
       hp: player.hp, skill: Object.assign({}, player.skill), resMax: player.resMax, resource: player.resource,
+      bodyTag: player.bodyTag || null,
     });
     nc.occupied = true;
     nc.el.classList.add('hidden');
@@ -2494,8 +2746,8 @@ function stageOnPossessed(c) {
   if (c.assembled) {
     const d = STG.def.assemble;
     setDoor(d.door, true); STG.prog.opened[d.door] = true;
-    completeMission('D');
-    stageMsg('再構成装置：再構成体の起動を確認。搬出口を開放します。', 3.2);
+    completeType('assemble');
+    if (!missionOf('assemble').doneLine) stageMsg('再構成装置：再構成体の起動を確認。搬出口を開放します。', 3.2);
   }
 }
 
@@ -2518,6 +2770,61 @@ function detachStrap() {
 }
 
 /* =========================================================
+   ミッション：搬送中の検体を回収（検体番号は体に付いて回る）
+   ========================================================= */
+// 指定の検体が今どこにあるか（自分の体・死体・ベルト）。無ければ null
+function findSpecimen() {
+  const spec = STG.def.specimen;
+  if (!spec) return null;
+  if (player.bodyTag === spec.tag && state !== S.HEAD && !headDead) return { where: 'player' };
+  for (const c of corpses) if (c.bodyTag === spec.tag) return { where: c.belt ? 'belt' : 'corpse', corpse: c, pos: c.group.position };
+  return null;
+}
+// 搬出口に着いた：拘束が外れ、その体で自由に動ける
+function releaseSpecimen(c) {
+  const spec = STG.def.specimen, L = STG.L;
+  if (corpses.indexOf(c) >= 0) removeCorpse(c);
+  STG.strap = null;
+  state = S.HUMAN;
+  playerPos.set(L.X(spec.unloadAt[0]), 0, L.Z(spec.unloadAt[1]));
+  yaw = spec.unloadYaw || 0; pitch = 0;
+  addShake(0.4); doFlash(0.3, '#ffe9a0'); sfx('lock');
+  announce(spec.releaseLine || ('検体' + spec.tag + '、搬出を確認。組立区画へ移送してください。'));
+}
+function registerSpecimen() {
+  const spec = STG.def.specimen;
+  if (state !== S.HUMAN || player.bodyTag !== spec.tag) {
+    stageMsg('登録装置：検体番号を確認できません。（指定 検体' + spec.tag + '）', 3.0);
+    sfx('bonk');
+    return;
+  }
+  addShake(0.25); sfx('lock');
+  completeType('specimen');
+}
+// 検体が壊れた・消えたら、1体だけ再供給する（回収前はベルトへ、回収後は組立区画のリフトへ）
+function updateSpecimen(dt) {
+  const spec = STG.def.specimen, P = STG.prog, L = STG.L;
+  if (!spec) return;
+  for (const c of corpses) if (c.bodyTag === spec.tag) c.fuse = null;   // 指定の検体は爆発させない
+  if (P.slots.torso || typeDone('assemble')) return;                    // 台座に据えたら役目は終わり
+  if (possess && possess.corpse && possess.corpse.bodyTag === spec.tag) return;
+  if (findSpecimen()) { STG.specRespawn = 0; return; }
+  STG.specRespawn = (STG.specRespawn || 0) + dt;
+  if (STG.specRespawn < (spec.respawn || 3)) return;
+  STG.specRespawn = 0;
+  if (!typeDone('specimen')) {
+    const ln = L.conv.lanes[spec.lane];
+    makeBeltCorpse(ln, ln.start, { bodyTag: spec.tag, arms: armsFrom(spec.arms || ['fist', 'fist']) });
+  } else {
+    const sp = spec.supply;
+    const c = createCorpse(L.X(sp.x), L.Z(sp.z), sp.rot || 0, { arms: armsFrom(spec.arms || ['fist', 'fist']), fuse: null, bodyTag: spec.tag });
+    c.stage = true;
+    addBodyPlate(c);
+    announce('検体' + spec.tag + 'の代替を組立区画のリフトへ供給しました。', 3.2);
+  }
+}
+
+/* =========================================================
    戦闘（通路戦・アリーナ）
    ========================================================= */
 function condOk(cond) {
@@ -2526,6 +2833,7 @@ function condOk(cond) {
   if (k === 'valves') return Object.keys(STG.prog.valves).length >= +v;
   if (k === 'flag') return !!STG.prog.flags[v];
   if (k === 'done') return !!STG.prog.done[v];
+  if (k === 'current') { const m = currentMission(); return !!m && m.id === v; }
   return true;
 }
 function spawnStageEnemy(rt, s) {
@@ -2553,6 +2861,7 @@ function spawnStageEnemy(rt, s) {
 }
 function startEncounter(rt) {
   rt.state = 'active';
+  if (rt.def.startLine) announce(rt.def.startLine);
   if (rt.def.type === 'arena') {
     for (const id of rt.def.doors) setDoor(id, false);
     rt.wave = -1;
@@ -2569,6 +2878,7 @@ function nextWave(rt) {
 function liveCount(rt) { return rt.enemies.filter((en) => en.state !== E.DEAD).length; }
 function clearEncounter(rt) {
   rt.state = 'cleared';
+  if (rt.def.clearLine) announce(rt.def.clearLine);
   STG.prog.cleared[rt.def.id] = true;
   if (rt.def.type === 'arena') {
     for (const id of rt.def.doors) setDoor(id, true);
@@ -2682,27 +2992,41 @@ function stageCandidates() {
   }
   if (human && def.kind === 'stage') {
     // バルブ
-    if (L.valves && !P.done.A) for (const id in L.valves) {
+    if (L.valves && isCurrent('valves')) for (const id in L.valves) {
       if (P.valves[id]) continue;
       const v = L.valves[id];
       out.push({ pos: v.pos, range: 2.2, label: 'バルブを回す', act: () => startValve(v) });
     }
     // 照合装置
-    if (def.armCheck && !P.done.B && P.done.A) {
-      out.push({ pos: L.crusher.slot, range: def.armCheck.crusher.r, label: '腕を提出する', act: startSubmit });
+    if (def.armCheck && isCurrent('armCheck')) {
+      out.push({ pos: L.crusher.slot, range: def.armCheck.crusher.r, label: def.armCheck.prompt || '腕を提出する', act: startSubmit });
+    }
+    // 検体の登録装置（ミッション：搬送中の検体を回収）
+    if (def.specimen && isCurrent('specimen')) {
+      const rg = def.specimen.register;
+      out.push({ pos: new THREE.Vector3(L.X(rg.x), 1.3, L.Z(rg.z)), range: rg.r || 2.2, label: '検体を登録する', act: registerSpecimen });
     }
     // 身体の台座
-    if (L.frame && !P.done.D && P.done.C) {
+    if (L.frame && isCurrent('assemble')) {
       const fr = L.frame;
       for (const side of ['LEFT', 'RIGHT']) {
         if (P.slots[side]) continue;
-        out.push({ pos: fr.prompt[side], range: 1.9, label: (side === 'LEFT' ? '左腕' : '右腕') + 'を掛ける', act: () => startSlot(side) });
+        const need = slotNeed(side);
+        if (need.from) {
+          out.push({ pos: fr.prompt[side], range: 1.9, label: '保管中の' + tagLabel(need.from) + 'を取り付ける', act: () => startSlotFromStore(side) });
+        } else {
+          out.push({ pos: fr.prompt[side], range: 1.9,
+            label: (need.tag ? tagLabel(need.tag) : (side === 'LEFT' ? '左腕' : '右腕')) + 'を掛ける', act: () => startSlot(side) });
+        }
       }
       if (!P.slots.torso) out.push({ pos: fr.prompt.TORSO, range: 1.9, label: '胴体を据える', act: placeTorso });
     }
-    // 終盤のスイッチ（任意）
-    if (L.switchPos && !P.finale) {
+    // 終盤のスイッチ（1-1 は任意。1-2 は最後のミッション）
+    if (L.switchPos && def.finale && !P.finale) {
       out.push({ pos: L.switchPos, range: 2.0, label: '搬送棟を起動する', act: pullFinaleSwitch });
+    }
+    if (L.switchPos && L.mega && isCurrent('mega') && !L.mega.on) {
+      out.push({ pos: L.switchPos, range: 2.2, label: def.mega.prompt || '主搬送系統を起動する', act: pullMegaSwitch });
     }
   }
   // ゴール扉
@@ -2716,7 +3040,9 @@ function stageCandidates() {
     if (c) {
       c.neck.getWorldPosition(_sv2);
       out.push({ pos: _sv2.clone(), range: 99, corpse: c,
-        label: c.assembled ? '完成した身体に接着する' : c.belt ? '搬送体に接着する' : '身体に接着する',
+        label: c.assembled ? '完成した身体に接着する'
+          : (def.specimen && c.bodyTag === def.specimen.tag) ? '検体' + c.bodyTag + 'に接着する'
+          : c.belt ? '搬送体に接着する' : '身体に接着する',
         act: () => startPossess(c) });
     }
   }
@@ -2821,9 +3147,12 @@ function currentCheckpoint() {
 function stageResetPlayer(cp) {
   player.hp = CONFIG.playerMaxHp;
   player.resMax = CONFIG.resourceStart; player.resource = player.resMax; player.resourceCharge = 0;
-  player.arms.LEFT = makeArmState(cp.arms[0] || ARM.FIST);
-  player.arms.RIGHT = makeArmState(cp.arms[1] || ARM.FIST);
+  // 腕は種類の文字列か { kind, tag, side }（番号付きの腕で戻る地点もある）
+  const arm = (a) => typeof a === 'object' && a ? makeArmState(a.kind, a.tag ? { tag: a.tag, side: a.side } : {}) : makeArmState(a || ARM.FIST);
+  player.arms.LEFT = arm(cp.arms[0]);
+  player.arms.RIGHT = arm(cp.arms[1]);
   player.skill = makeBodySkill();
+  player.bodyTag = cp.bodyTag || null;
   clearAsuraArms(); clearHealFx(); clearScanRipples(); clearBombFx();
   wristCool.LEFT = 0; wristCool.RIGHT = 0;
   player.gunRecoil.LEFT = 0; player.gunRecoil.RIGHT = 0;
@@ -2893,9 +3222,25 @@ function stageObjective() {
   if (m.type === 'armCheck') {
     const ac = def.armCheck;
     const w = findTaggedArm(ac.tag);
-    if (w && w.where === 'player') return { text: '照合装置に ' + ac.tag + ' の腕を提出する', goal: _stGoal.copy(L.crusher.slot) };
-    return { text: '指定番号 ' + ac.tag + ' の腕を探して装着する',
-      goal: w && w.pos ? _stGoal.copy(w.pos) : at(L.X(ac.pedestal.x), L.Z(ac.pedestal.z)) };
+    const nm = ac.label || ac.tag;
+    const dev = ac.device || '照合装置';
+    if (w && w.where === 'player') return { text: dev + 'に ' + nm + ' の腕を提出する', goal: _stGoal.copy(L.crusher.slot) };
+    const t = taggedArmDefs().find((q) => q.tag === ac.tag);
+    return { text: '指定番号 ' + nm + ' の腕を探して装着する',
+      goal: w && w.pos ? _stGoal.copy(w.pos) : at(L.X(t.at.x), L.Z(t.at.z)) };
+  }
+  if (m.type === 'specimen') {
+    const sp = def.specimen, where = findSpecimen();
+    if (state === S.STRAPPED && player.bodyTag === sp.tag) return { text: '検体' + sp.tag + 'のまま搬出口まで運ばれる', goal: at(L.X(sp.unloadAt[0]), L.Z(sp.unloadAt[1])) };
+    if (where && where.where === 'player') return { text: '検体' + sp.tag + 'の体で組立区画の登録装置へ向かう', goal: at(L.X(sp.register.x), L.Z(sp.register.z)) };
+    return { text: '搬送ライン上の検体' + sp.tag + 'を探して接着する', goal: where && where.pos ? _stGoal.copy(where.pos) : null };
+  }
+  if (m.type === 'arena') {
+    const rt = STG.enc[m.enc];
+    return { text: m.text || '試験場へ向かう', goal: rt ? at((rt.zone.x0 + rt.zone.x1) / 2, (rt.zone.z0 + rt.zone.z1) / 2) : null };
+  }
+  if (m.type === 'mega') {
+    return { text: L.mega && L.mega.on ? '主搬送棟を見渡す' : '主搬送制御室の大型スイッチを入れる', goal: L.switchPos ? _stGoal.copy(L.switchPos) : null };
   }
   if (m.type === 'conveyor') {
     const g = L.walk.find((w) => w.id === def.conveyor.goal);
@@ -2906,7 +3251,17 @@ function stageObjective() {
     const s = P.slots;
     if (s.torso) return { text: '頭だけで、完成した身体に接着する', goal: _stGoal.copy(L.frame.seat) };
     const st = '左腕' + (s.LEFT ? '●' : '○') + ' 右腕' + (s.RIGHT ? '●' : '○') + ' 胴体○';
-    return { text: '写真のとおりに身体を組み立てる　' + st, goal: _stGoal.copy(L.frame.seat) };
+    // 足りない番号の腕があれば、そこを指す
+    const nl = slotNeed('LEFT');
+    if (!s.LEFT && nl.tag) {
+      const w = findTaggedArm(nl.tag);
+      if (!w || w.where !== 'player') {
+        const t = taggedArmDefs().find((q) => q.tag === nl.tag);
+        return { text: '指定の' + tagLabel(nl.tag) + 'を探して左腕に付ける　' + st,
+          goal: w && w.pos ? _stGoal.copy(w.pos) : (t ? at(L.X(t.at.x), L.Z(t.at.z)) : null) };
+      }
+    }
+    return { text: (STG.def.assemble.text || '写真のとおりに身体を組み立てる') + '　' + st, goal: _stGoal.copy(L.frame.seat) };
   }
   return { text: '-', goal: null };
 }
@@ -2928,6 +3283,8 @@ function updateStage(dt, rdt, wdt) {
   // 明るさ（ボス戦の照明の更新のあとで上書きする）
   hemiLight.intensity = def.ambient.hemi;
   dirLight.intensity = def.ambient.dir;
+  // 霧もボス戦の照明処理が毎フレーム寄せてくるので、ここで戻す（主搬送棟の起動中は updateMega が持つ）
+  if (!(L.mega && L.mega.on)) { scene.fog.far = def.fog.far; scene.fog.near = def.fog.near; }
   updateLights(rdt);
   for (const a of L.anim) a.update(rdt);
   // 扉の開け閉め
@@ -2965,7 +3322,7 @@ function updateStage(dt, rdt, wdt) {
     }
     if (STG.crtResetT > 0) {
       STG.crtResetT -= rdt;
-      if (STG.crtResetT <= 0 && !P.done.B) L.armCrt.set(['REQUIRED ARM', '— ' + def.armCheck.tag + ' —']);
+      if (STG.crtResetT <= 0 && !typeDone('armCheck')) L.armCrt.set(armCrtIdle());
     }
     if (L.switchLever) {
       const tgt = P.finale ? -0.7 : 0.7;
@@ -2973,6 +3330,26 @@ function updateStage(dt, rdt, wdt) {
     }
     if (L.conv) updateConveyor(wdt, rdt);
     updateTaggedArm(dt);
+    updateSpecimen(dt);
+    if (L.mega) updateMega(rdt);
+    for (const d of L.decoBelts || []) d.update(rdt);
+    for (const g of L.gauges || []) g.update(rdt);
+    // アリーナのミッション：その戦闘を倒しきれば達成（途中で体や腕を替えても関係ない）
+    {
+      const m = currentMission();
+      if (m && m.type === 'arena' && STG.enc[m.enc] && STG.enc[m.enc].state === 'cleared') completeMission(m.id);
+    }
+    // 研究員の指示：ミッションが切り替わったら放送する
+    {
+      const mi = missionIndex();
+      if (STG.briefMi !== mi) { STG.briefMi = mi; STG.briefPending = true; }
+      if (STG.briefDelay > 0) STG.briefDelay -= rdt;
+      else if (STG.briefPending) {
+        STG.briefPending = false;
+        const m = STG.def.missions[mi];
+        if (m && m.brief) announce(m.brief, 4.6);
+      }
+    }
     updateEncounters(wdt);
     // 隠し部屋の点検扉：中に人間の体でいれば内側から開く
     for (const d of (def.doors || [])) {
@@ -2983,11 +3360,11 @@ function updateStage(dt, rdt, wdt) {
       }
     }
     // ミッションC：人間の体で対岸に立てば突破
-    if (def.conveyor && P.done.B && !P.done.C && state === S.HUMAN) {
+    if (def.conveyor && def.conveyor.goal && isCurrent('conveyor') && state === S.HUMAN) {
       const g = L.walk.find((w) => w.id === def.conveyor.goal);
       if (g && inR(g, playerPos.x, playerPos.z)) {
         setDoor(def.conveyor.door, true); P.opened[def.conveyor.door] = true;
-        completeMission('C');
+        completeType('conveyor');
         stageMsg('受入口：搬送検体の受領を確認。扉を開放します。', 3.0);
       }
     }
@@ -3003,3 +3380,270 @@ function updateStage(dt, rdt, wdt) {
 
 // スタート画面の「セーフルームへ移動」。クリックで開始（ロック）しつつ移動する
 document.getElementById('startSafe').addEventListener('click', () => { stageGoSafe(false); });
+
+/* =========================================================
+   1-2 で足した見た目：鉄の足場・検査装置・小型コンベア・主搬送棟
+   ========================================================= */
+// 鉄の足場（吹き抜けを渡る）。壁も天井もなく、手すりと下からの支柱だけ
+function buildCatwalk(L, sp) {
+  const B = L.batches;
+  const alongX = (sp.x1 - sp.x0) > (sp.z1 - sp.z0);
+  const len = alongX ? sp.x1 - sp.x0 : sp.z1 - sp.z0;
+  addBox(B.metal, sp.x0, sp.x1, -0.12, 0, sp.z0, sp.z1, 0x3b3f3c);
+  // 縞鋼板の筋
+  for (let t = 0.6; t < len; t += 1.2) {
+    if (alongX) addBox(B.dark, sp.x0 + t - 0.03, sp.x0 + t + 0.03, 0, 0.01, sp.z0, sp.z1, 0x242628, { grime: 0 });
+    else addBox(B.dark, sp.x0, sp.x1, 0, 0.01, sp.z0 + t - 0.03, sp.z0 + t + 0.03, 0x242628, { grime: 0 });
+  }
+  // 下の吹き抜けの床まで（ビューの空間の床の高さ）
+  let bottom = -10;
+  for (const o of L.spaces) if (o.type === 'view' && inR(o, (sp.x0 + sp.x1) / 2, (sp.z0 + sp.z1) / 2)) bottom = o.fy;
+  const rails = alongX ? [[sp.z0 + 0.06], [sp.z1 - 0.06]] : [[sp.x0 + 0.06], [sp.x1 - 0.06]];
+  for (const [w] of rails) {
+    const P = (t, y) => alongX ? [sp.x0 + t, y, w] : [w, y, sp.z0 + t];
+    addRod(B.metal, P(0, 1.05), P(len, 1.05), 0.035, 0xb0a020);
+    addRod(B.metal, P(0, 0.55), P(len, 0.55), 0.025, 0x6a6e60);
+    for (let t = 0; t <= len + 0.01; t += 2) addRod(B.metal, P(t, 0), P(t, 1.05), 0.025, 0x6a6e60);
+    for (let t = 3; t < len; t += 8) addRod(B.metal, P(t, -0.12), P(t, bottom), 0.12, 0x4a4d4a);
+  }
+  for (let t = 5; t < len; t += 10) {
+    const [x, z] = alongX ? [sp.x0 + t, (sp.z0 + sp.z1) / 2] : [(sp.x0 + sp.x1) / 2, sp.z0 + t];
+    L.fixtures.push({ pos: new THREE.Vector3(x, 2.2, z), tone: 'dim' });
+  }
+}
+
+// 検査装置（1-2 の M1）。腕を粉砕せずガラスケースに保管する
+function buildInspectorBody(L, F, p) {
+  const B = L.batches;
+  lbox(B.metal, F, -1.2, 1.2, 0, 1.4, -0.8, 0.8, 0x50564f);
+  lbox(B.dark, F, -0.45, 0.45, 0.85, 1.3, 0.79, 0.81, 0x050505, { grime: 0 });     // 投入口
+  lbox(B.glow, F, -0.5, 0.5, 1.32, 1.36, 0.8, 0.83, 0x3aff7a, { grime: 0 });
+  lbox(B.metal, F, -1.25, 1.25, 1.4, 1.5, -0.85, 0.85, 0x2c302e);
+  // ガラスケースと枠
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.2, 0.9),
+    new THREE.MeshLambertMaterial({ color: 0x9cc4d4, transparent: true, opacity: 0.18, depthWrite: false }));
+  glass.position.set(F.x, 2.1, F.z); glass.rotation.y = F.yaw;
+  L.group.add(glass);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) lbox(B.metal, F, sx * 0.7 - 0.03, sx * 0.7 + 0.03, 1.5, 2.7, sz * 0.45 - 0.03, sz * 0.45 + 0.03, 0x2a2c2e);
+  lbox(B.metal, F, -0.75, 0.75, 2.7, 2.78, -0.5, 0.5, 0x2a2c2e);
+  const [sx, , sz] = F.at(0, 0, 0.82);
+  textPlane(L, [p.label || '適合検査'], 'plate', 1.2, 0.26, sx, 1.62, sz, p.face);
+  L.crusher = { F, drums: [], spin: 0, slot: new THREE.Vector3(sx, 1.1, sz), case: new THREE.Vector3(F.x, 2.35, F.z), shown: null };
+  addSolid(L, F, 2.4, 1.6);
+}
+
+// 小型コンベア（バルブBで動き出す）。荷物の袋を運ぶ
+function buildDecoBelt(L, d) {
+  const B = L.batches, X = L.X, Z = L.Z;
+  const r = rectOf(d.r);
+  const x0 = X(r.x0), x1 = X(r.x1), z0 = Z(r.z0), z1 = Z(r.z1), y = d.y || 0.8;
+  const alongX = (x1 - x0) > (z1 - z0);
+  addBox(B.metal, x0, x1, y - 0.3, y - 0.04, z0, z1, 0x2e3133);
+  for (let t = 0.5; t < (alongX ? x1 - x0 : z1 - z0); t += 2) {
+    if (alongX) addBox(B.metal, x0 + t - 0.08, x0 + t + 0.08, 0, y - 0.3, z0 + 0.1, z1 - 0.1, 0x3c4043);
+    else addBox(B.metal, x0 + 0.1, x1 - 0.1, 0, y - 0.3, z0 + t - 0.08, z0 + t + 0.08, 0x3c4043);
+  }
+  const len = alongX ? x1 - x0 : z1 - z0, wid = alongX ? z1 - z0 : x1 - x0;
+  const tex = beltTexture().clone(); tex.needsUpdate = true; tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, len / 2);
+  const belt = new THREE.Mesh(new THREE.PlaneGeometry(wid, len), new THREE.MeshLambertMaterial({ map: tex }));
+  belt.rotation.x = -Math.PI / 2;
+  if (alongX) belt.rotation.z = Math.PI / 2;
+  belt.position.set((x0 + x1) / 2, y, (z0 + z1) / 2);
+  L.group.add(belt);
+  const bags = [];
+  const bagMat = new THREE.MeshLambertMaterial({ color: d.cargo === 'arms' ? 0x8a5e52 : 0x3a3a34 });
+  for (let i = 0; i < Math.floor(len / 2.6); i++) {
+    const m = new THREE.Mesh(d.cargo === 'arms' ? new THREE.BoxGeometry(0.16, 0.16, 0.8) : new THREE.BoxGeometry(0.7, 0.35, 0.9), bagMat);
+    L.group.add(m);
+    bags.push({ m, s: i * 2.6 });
+  }
+  const place = () => {
+    for (const b of bags) {
+      const t = ((b.s % len) + len) % len;
+      if (alongX) b.m.position.set(x0 + t, y + 0.18, (z0 + z1) / 2);
+      else b.m.position.set((x0 + x1) / 2, y + 0.18, z0 + t);
+    }
+  };
+  place();
+  L.decoBelts = L.decoBelts || [];
+  L.decoBelts.push({ update: (dt) => {
+    if (!condOk(d.cond)) return;
+    const v = (d.speed || 1.2) * (d.dir || 1);
+    tex.offset.y += v * dt / 2;
+    for (const b of bags) b.s += v * dt;
+    place();
+  } });
+}
+
+/* ---------- 主搬送棟（1-2 の最後） ----------
+   序盤から窓と足場越しに暗いまま見えている吹き抜け。バルブBで1本だけ動き、
+   主搬送系統を起動すると、手前→奥→左右→上下の階へ順に照明が点き、
+   何十本ものラインが腕・脚・胴体・頭・死体を種類ごとに運び始める。
+   遠くの部品は InstancedMesh の使い回し（1ラインにつき1メッシュ）           */
+const MEGA_COLORS = { flesh: 0x7a3e36, pale: 0x9c8a7e, cloth: 0x4a4650, steel: 0x3a3634 };
+function megaGeometry(kind) {
+  const b = new Batch(new THREE.MeshLambertMaterial());
+  const box = (w, h, d, x, y, z, col) => { const g = new THREE.BoxGeometry(w, h, d); b.add(g, m4At(x, y, z), col, { grime: 0.25 }); g.dispose(); };
+  const ball = (r, x, y, z, col) => { const g = new THREE.SphereGeometry(r, 8, 6); b.add(g, m4At(x, y, z), col, { grime: 0.2 }); g.dispose(); };
+  switch (kind) {
+    case 'rarm': case 'larm':
+      box(0.17, 0.17, 0.82, 0, 0, 0, MEGA_COLORS.pale); box(0.22, 0.2, 0.2, 0, 0, kind === 'rarm' ? 0.5 : -0.5, MEGA_COLORS.pale);
+      box(0.19, 0.19, 0.06, 0, 0, kind === 'rarm' ? -0.42 : 0.42, MEGA_COLORS.flesh); break;
+    case 'leg':
+      box(0.22, 0.22, 1.0, 0, 0, 0, MEGA_COLORS.cloth); box(0.22, 0.14, 0.32, 0, -0.04, 0.6, 0x222222);
+      box(0.24, 0.24, 0.06, 0, 0, -0.52, MEGA_COLORS.flesh); break;
+    case 'torso':
+      box(0.8, 0.36, 1.0, 0, 0, 0, MEGA_COLORS.cloth); box(0.32, 0.2, 0.2, 0, 0.04, -0.58, MEGA_COLORS.flesh); break;
+    case 'head':
+      ball(0.24, 0, 0.1, 0, MEGA_COLORS.pale); box(0.2, 0.08, 0.2, 0, -0.14, 0, MEGA_COLORS.flesh); break;
+    default:   // 頭のない死体（仰向け）
+      box(0.8, 0.36, 1.0, 0, 0, -0.2, MEGA_COLORS.cloth); box(0.5, 0.26, 1.0, 0, -0.04, 0.8, 0x2e2a32);
+      box(0.16, 0.16, 0.8, 0.52, 0, -0.1, MEGA_COLORS.pale); box(0.16, 0.16, 0.8, -0.52, 0, -0.1, MEGA_COLORS.pale);
+      box(0.3, 0.16, 0.16, 0, 0.02, -0.76, MEGA_COLORS.flesh);
+  }
+  const m = b.mesh();
+  return m.geometry;
+}
+function buildMega(L, md) {
+  const hall = L.spaces.find((s) => s.id === md.hall);
+  if (!hall) return;
+  const B = L.batches;
+  const geos = {};
+  const mega = { def: md, on: false, t: 0, done: false, partialOn: false, lines: [], groups: [], hum: null };
+  const x0 = hall.x0 + 1, x1 = hall.x1 - 1;
+  md.lines.forEach((ln, i) => {
+    const z = L.Z(ln.z), y = ln.y;
+    // 架台（下の床まで脚を下ろす）
+    addBox(B.metal, x0, x1, y - 0.32, y - 0.06, z - 0.9, z + 0.9, 0x2e3133);
+    for (let x = x0 + 2; x < x1; x += 6) addBox(B.metal, x - 0.15, x + 0.15, hall.fy, y - 0.32, z - 0.15, z + 0.15, 0x3a3e40);
+    const tex = beltTexture().clone(); tex.needsUpdate = true; tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, (x1 - x0) / 2);
+    const belt = new THREE.Mesh(new THREE.PlaneGeometry(1.8, x1 - x0), new THREE.MeshLambertMaterial({ map: tex, emissive: 0x000000 }));
+    belt.rotation.x = -Math.PI / 2; belt.rotation.z = Math.PI / 2;
+    belt.position.set((x0 + x1) / 2, y - 0.05, z);
+    L.group.add(belt);
+    const kind = ln.kind;
+    geos[kind] = geos[kind] || megaGeometry(kind);
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x000000 });
+    const n = Math.max(6, Math.floor((x1 - x0) / (ln.gap || 2.4)));
+    const inst = new THREE.InstancedMesh(geos[kind], mat, n);
+    L.group.add(inst);
+    // 照明（ラインの上の吊り下げ灯）
+    const lamps = [];
+    for (let x = x0 + 4; x < x1; x += 9) {
+      const lm = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 0.4), new THREE.MeshBasicMaterial({ color: 0x0b0b0b }));
+      lm.position.set(x, y + 3.0, z);
+      L.group.add(lm);
+      lamps.push(lm);
+    }
+    const line = { i, def: ln, z, y, inst, mat, beltMat: belt.material, tex, n, x0, x1, phase: hash3(i, 3, 7) * 10,
+      speed: ln.speed || 1.4, dir: ln.dir || 1, run: 0, lit: 0, lamps, group: ln.group || 0 };
+    mega.lines.push(line);
+    for (const fx of [0.3, 0.7]) {
+      L.fixtures.push({ pos: new THREE.Vector3(x0 + (x1 - x0) * fx, y + 2.6, z), tone: 'spot', cond: () => line.lit > 0.4 });
+    }
+    placeMegaLine(line);
+  });
+  L.mega = mega;
+}
+const _megaM = new THREE.Matrix4(), _megaQ = new THREE.Quaternion(), _megaE = new THREE.Euler(), _megaS = new THREE.Vector3(1, 1, 1), _megaP = new THREE.Vector3();
+function placeMegaLine(ln) {
+  const span = ln.x1 - ln.x0;
+  for (let i = 0; i < ln.n; i++) {
+    const u = (((i / ln.n) * span + ln.phase * ln.dir) % span + span) % span;
+    const x = ln.x0 + u;
+    _megaE.set(0, (ln.def.kind === 'head' ? i * 1.3 : Math.PI / 2) + Math.sin(i * 7.1) * 0.15, 0);
+    _megaQ.setFromEuler(_megaE);
+    _megaP.set(x, ln.y + 0.2, ln.z + Math.sin(i * 3.7) * 0.25);
+    _megaM.compose(_megaP, _megaQ, _megaS);
+    ln.inst.setMatrixAt(i, _megaM);
+  }
+  ln.inst.instanceMatrix.needsUpdate = true;
+}
+function setMegaLineLit(ln, k) {
+  ln.lit = k;
+  const e = 0.65 * k;
+  ln.mat.emissive.setRGB(e * 1.1, e * 0.7, e * 0.62);
+  ln.beltMat.emissive.setRGB(e * 0.25, e * 0.25, e * 0.25);
+  for (const lm of ln.lamps) lm.material.color.setRGB(0.05 + 0.92 * k, 0.05 + 0.88 * k, 0.05 + 0.75 * k);
+}
+function resetMega() {
+  const m = STG.L.mega;
+  if (!m) return;
+  m.on = false; m.t = 0; m.done = false; m.partialOn = false;
+  for (const ln of m.lines) { ln.run = 0; ln.phase = hash3(ln.i, 3, 7) * 10; setMegaLineLit(ln, 0); placeMegaLine(ln); }
+  stopHum();
+}
+function pullMegaSwitch() {
+  const L = STG.L;
+  L.mega.on = true; L.mega.t = 0;
+  STG.prog.megaOn = true;
+  STG.prog.finale = true;
+  addShake(0.6); sfx('boom');
+  startHum();
+}
+// 低いうなり（主電源）。WebAudio は main.js の audioCtx を使う
+function startHum() {
+  const ac = audioCtx;
+  if (!ac || ac.state !== 'running' || STG.L.mega.hum) return;
+  const g = ac.createGain(); g.gain.value = 0; g.connect(ac.destination);
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+  o1.type = 'sawtooth'; o1.frequency.value = 46; o2.type = 'square'; o2.frequency.value = 23;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 180;
+  o1.connect(f); o2.connect(f); f.connect(g);
+  o1.start(); o2.start();
+  g.gain.linearRampToValueAtTime(0.09, ac.currentTime + 3);
+  STG.L.mega.hum = { g, o1, o2 };
+}
+function stopHum() {
+  const m = STG.L && STG.L.mega;
+  if (!m || !m.hum) return;
+  try { m.hum.o1.stop(); m.hum.o2.stop(); m.hum.g.disconnect(); } catch (e) { /* 止まっている */ }
+  m.hum = null;
+}
+function updateMega(rdt) {
+  const L = STG.L, m = L.mega, md = m.def;
+  // バルブBで一部だけ動き出す
+  m.partialOn = !m.on && condOk(md.partialCond);
+  if (m.partialOn) {
+    for (const i of md.partialLines || []) {
+      const ln = m.lines[i];
+      if (ln.lit < 0.55) setMegaLineLit(ln, 0.55);
+      ln.phase += ln.speed * ln.dir * rdt * 0.6;
+      placeMegaLine(ln);
+      ln.tex.offset.y += ln.speed * ln.dir * rdt * 0.3;
+    }
+  }
+  if (!m.on) return;
+  m.t += rdt;
+  const ng = Math.max(...m.lines.map((l) => l.group)) + 1;
+  for (const ln of m.lines) {
+    // 照明は手前の組から順に。同じ組の中でもラインごとに少しずつずらす
+    const tl = 1.2 + ln.group * 1.1 + (ln.i % 4) * 0.18;
+    const k = Math.max(0, Math.min(1, (m.t - tl) / 0.35));
+    if (k > ln.lit) {
+      if (ln.lit === 0 && k > 0) sfx('bonk');
+      setMegaLineLit(ln, k);
+    }
+    // ラインは1本目から順に動き出し、やがて全部が同時に動く
+    const ts = 2.2 + ln.i * 0.45;
+    if (m.t > ts) ln.run = Math.min(1, ln.run + rdt * 0.5);
+    if (ln.run > 0) {
+      ln.phase += ln.speed * ln.dir * ln.run * rdt;
+      placeMegaLine(ln);
+      ln.tex.offset.y += ln.speed * ln.dir * ln.run * rdt / 2;
+    }
+  }
+  // 霧を晴らして奥行きを見せる
+  const k = Math.min(1, m.t / 6);
+  scene.fog.far = STG.def.fog.far + (md.fogFar - STG.def.fog.far) * k;
+  scene.fog.near = STG.def.fog.near + (md.fogNear - STG.def.fog.near) * k;
+  if (camera.far < md.fogFar + 40) { camera.far = md.fogFar + 40; camera.updateProjectionMatrix(); }
+  if (m.t < 2.2 + m.lines.length * 0.45 + 2) addShake(0.04);
+  const endT = 1.2 + ng * 1.1 + 2.2 + m.lines.length * 0.45 * 0.5 + 2.5;
+  if (!m.done && m.t >= Math.max(endT, 2.2 + m.lines.length * 0.45 + 1.5)) {
+    m.done = true;
+    completeType('mega');
+  }
+}
