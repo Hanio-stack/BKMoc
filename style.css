@@ -583,3 +583,56 @@ body.manual-on #compass { display: none; }
 .start-title { font-size: 22px; letter-spacing: 0.3em; color: #e6ebe0; margin-bottom: 16px; }
 .start-sub { font-size: 13px; color: rgba(200, 205, 195, 0.7); letter-spacing: 0.1em; }
 
+
+/* ---- ステージ（stage.js）---- */
+/* 暗転。ワープのたびに黒く覆う */
+#stageFade {
+  position: fixed; inset: 0; background: #000; opacity: 0;
+  z-index: 40; pointer-events: none;
+}
+/* インタラクトのプロンプト（画面中央の少し下）。反応する対象は常に1つだけ */
+#stagePrompt {
+  position: fixed; left: 50%; top: 61%;
+  transform: translateX(-50%);
+  z-index: 14; pointer-events: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 16px;
+  background: rgba(0, 0, 0, 0.55);
+  border-left: 3px solid rgba(255, 235, 150, 0.85);
+  color: #eef1ea; font-size: 18px; letter-spacing: 0.08em;
+  text-shadow: 0 1px 3px #000;
+}
+#stagePrompt .key, #stageDialog .key {
+  display: inline-block; min-width: 1.2em; text-align: center;
+  border: 1px solid rgba(255, 235, 150, 0.85);
+  padding: 0 6px; font-weight: bold; color: #ffe98a;
+}
+#stagePrompt.hidden, #stageDialog.hidden { display: none; }
+/* 受付の会話 */
+#stageDialog {
+  position: fixed; left: 50%; bottom: 150px;
+  transform: translateX(-50%);
+  width: min(620px, 86vw);
+  z-index: 30; pointer-events: none;
+  padding: 18px 26px 14px;
+  background: rgba(6, 9, 10, 0.86);
+  border: 1px solid rgba(160, 200, 190, 0.35);
+  border-left: 5px solid #7fd8ec;
+  color: #e6ebe0; letter-spacing: 0.06em;
+}
+#stageDialog .spk { color: #7fd8ec; font-size: 15px; margin-bottom: 6px; }
+#stageDialog .txt { font-size: 20px; margin-bottom: 12px; }
+#stageDialog .choices { list-style: none; margin: 0; padding: 0; }
+#stageDialog .choices li { font-size: 19px; padding: 5px 12px; color: rgba(230, 235, 224, 0.7); }
+#stageDialog .choices li.on { color: #111; background: #ffe98a; }
+#stageDialog .choices li.on::before { content: '▶ '; }
+#stageDialog .help { margin-top: 10px; font-size: 12px; color: rgba(200, 205, 195, 0.6); }
+#stageDialog .help .key { font-size: 11px; margin-right: 2px; }
+/* スタート画面のセーフルームへのボタン */
+#startSafe {
+  margin-top: 22px; padding: 9px 22px;
+  background: rgba(255, 233, 138, 0.08); color: #ffe98a;
+  border: 1px solid rgba(255, 233, 138, 0.6);
+  font-size: 14px; letter-spacing: 0.18em; cursor: pointer;
+}
+#startSafe:hover { background: rgba(255, 233, 138, 0.2); }
