@@ -25,6 +25,7 @@
    encounters: 戦闘。zone に入る（cond があればそれも満たす）と spawns が湧く。
                type:'arena' は doors を閉じてウェーブ戦をする。
    missions: 順番に達成する主目標。checkpoints は死んだときに戻る位置と体（腕）。
+   armSupply: 予備腕の支給口。通常腕が足りなくなると、近くの支給口に足りない本数（最大2本）だけ出てくる。
    ========================================================= */
 (window.BK_STAGES = window.BK_STAGES || {})['1-1'] = {
   id: '1-1',

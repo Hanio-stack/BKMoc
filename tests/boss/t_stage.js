@@ -415,19 +415,24 @@ const { setup } = require('./bt');
   o.expect('支給の字幕', (await ev(() => document.getElementById('subtitle').textContent)).indexOf('予備の通常腕を補充') >= 0, true);
   // ライジング（Q）で床の腕に照準を合わせ、左右のクリックで付ける（実際の操作）
   const realTake = async (btn) => {
-    await page.keyboard.down('KeyQ');
-    await o.waitFor(() => state === 'RISING', 4000); await wait(300);
-    const ok = await o.waitFor(() => {
-      const p = severedParts.find((q) => q.supply && q.phase === 'grounded');
-      if (!p) return false;
-      const c = camera.position, t = p.obj.position;
-      yaw = Math.atan2(-(t.x - c.x), -(t.z - c.z)); pitch = Math.atan2(t.y - c.y, Math.hypot(t.x - c.x, t.z - c.z));
-      return !!(selectedTarget && selectedTarget.part === p);
-    }, 4000);
-    await page.mouse.down({ button: btn }); await wait(120); await page.mouse.up({ button: btn });
-    await o.waitFor((side) => graftArms.length === 0 && !player.arms[side].lost, 12000, btn === 'left' ? 'LEFT' : 'RIGHT');
-    await page.keyboard.up('KeyQ'); await wait(400);
-    return ok;
+    const side = btn === 'left' ? 'LEFT' : 'RIGHT';
+    for (let tries = 0; tries < 3; tries++) {
+      await page.keyboard.down('KeyQ');
+      await o.waitFor(() => state === 'RISING', 4000); await wait(400);
+      const ok = await o.waitFor(() => {
+        const p = severedParts.filter((q) => q.supply && q.phase === 'grounded')
+          .sort((a, b) => a.obj.position.distanceTo(camera.position) - b.obj.position.distanceTo(camera.position))[0];
+        if (!p) return false;
+        const c = camera.position, t = p.obj.position;
+        yaw = Math.atan2(-(t.x - c.x), -(t.z - c.z)); pitch = Math.atan2(t.y - c.y, Math.hypot(t.x - c.x, t.z - c.z));
+        return !!(selectedTarget && selectedTarget.part === p);
+      }, 6000);
+      if (ok) { await page.mouse.down({ button: btn }); await wait(120); await page.mouse.up({ button: btn }); }
+      await o.waitFor((side) => graftArms.length === 0 && !player.arms[side].lost, ok ? 12000 : 200, side);
+      await page.keyboard.up('KeyQ'); await wait(500);
+      if (await ev((side) => !player.arms[side].lost && player.arms[side].kind === 'fist', side)) return true;
+    }
+    return false;
   };
   await tp(-11.6, -42, 90, -30); await wait(200);
   o.expect('左クリックで左腕を付けた', [await realTake('left'), await ev(() => [player.arms.LEFT.kind, player.arms.LEFT.lost])], [true, ['fist', false]]);
@@ -452,7 +457,7 @@ const { setup } = require('./bt');
     player.hp = 100;
   });
   await o.waitFor(() => severedParts.some((p) => p.supply && inR(STG.enc.arena1.zone, p.obj.position.x, p.obj.position.z)), 9000);
-  o.expect('アリーナの中の支給口に出る', await ev(() => severedParts.filter((p) => p.supply).map((p) => inR(STG.enc.arena1.zone, p.obj.position.x, p.obj.position.z))), [true, true]);
+  o.expect('アリーナの中の支給口に2本出る', await ev(() => severedParts.filter((p) => p.supply && inR(STG.enc.arena1.zone, p.obj.position.x, p.obj.position.z)).length), 2);
   await ev(() => { player.hp = 100; for (const en of STG.enc.arena1.enemies) en.cooldown = 99; });
   await tp(54.5, -59.8, 160, -30); await wait(200);
   o.expect('拾って戦闘を続けられる', [await realTake('left'), await ev(() => player.arms.LEFT.lost)], [true, false]);

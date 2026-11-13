@@ -2426,7 +2426,7 @@ function supplyFistCount(zone) {
   const inZ = (x, z) => !zone || (x >= zone.x0 && x <= zone.x1 && z >= zone.z0 && z <= zone.z1);
   const ok = (a) => a && !a.lost && a.kind === ARM.FIST && !a.purged && !a.tag;
   let n = 0;
-  if (state === S.HUMAN || state === S.RISING) for (const s of ['LEFT', 'RIGHT']) if (ok(player.arms[s])) n++;
+  if (state !== S.HEAD) for (const s of ['LEFT', 'RIGHT']) if (ok(player.arms[s])) n++;   // 頭だけのときは捨てた体（死体）の側で数える
   for (const p of severedParts) if (p.phase === 'grounded' && ok(p.armState) && inZ(p.obj.position.x, p.obj.position.z)) n++;
   for (const g of graftArms) if (ok(g.armState)) n++;
   for (const c of corpses) {
