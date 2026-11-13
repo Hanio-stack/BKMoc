@@ -2682,6 +2682,8 @@ function updateConveyor(wdt, rdt) {
       c.group.position.z = c.belt.z;
       const past = ln.dir < 0 ? c.belt.z <= ln.kIn : c.belt.z >= ln.kIn;
       if (!past) continue;
+      // 乗っ取りの途中なら、終わるまで待つ（終わった次のフレームで搬出／粉砕される）
+      if (possess && possess.corpse === c) continue;
       ln.bodies.splice(ln.bodies.indexOf(c), 1);
       // 仕分け機：指定の検体だけ搬出口へ下ろし、ほかは粉砕する
       const spec = STG.def.specimen;
