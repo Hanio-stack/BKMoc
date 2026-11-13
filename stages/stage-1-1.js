@@ -128,6 +128,18 @@
   /* ---------- 扉 ---------- */
   // axis:'x' は z=at の壁に付いた扉（x の from-to に広がる）、'z' は x=at の壁。
   // r は閉まっているときに通れなくなる範囲（自動で作る。壁の前後 0.5m）
+  // 予備腕の支給口（壁の箱。通常腕が足りなくなると、ここに足りない本数だけ出てくる）
+  // x,z は壁の位置、face は部屋の内側の向き。アリーナの中にも置く（閉じ込められても立て直せる）
+  armSupply: [
+    { x: 6, z: -40, face: 'e', name: '第一閘門' },
+    { x: -9, z: -42, face: 'w', name: '第一制御室' },
+    { x: 55.5, z: -62, face: 's', name: '旧弾薬庫' },
+    { x: 20, z: -14, face: 'n', name: '第二処理設備室' },
+    { x: 26, z: -67, face: 'n', name: '検体照合室' },
+    { x: -76, z: -70, face: 'e', name: '検体処理ホール' },
+    { x: -74, z: -110, face: 'e', name: '検体再構成室' },
+  ],
+
   doors: [
     { id: 'entryBack', axis: 'x', at: 6, from: -2, to: 2, h: 3.0, style: 'blast', decor: true },
     { id: 'dA', axis: 'x', at: -54, from: 14, to: 18, h: 2.6, style: 'blast', lamp: true },

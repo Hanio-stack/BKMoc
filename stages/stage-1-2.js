@@ -79,7 +79,7 @@
   ],
   walks: [
     { id: 'spA', r: [-6, 3, -108, -81] },            // 搬送室の足場（足場の先）
-    { id: 'unload', r: [15.6, 30, -110, -102.5] },   // 搬出台（仕分け機の先）
+    { id: 'unload', r: [15.6, 30, -110, -102.5] },   // 搬出台（搬出口の先）
   ],
   // 足場が壁を貫く所の上下（壁が抜けたままにならないように）
   fills: [
@@ -104,6 +104,19 @@
     { axis: 'z', at: -9.4, from: -12, to: -7, y0: 1.0, y1: 2.3, style: 'glass' },
     { axis: 'z', at: -152, from: 2, to: 24, y0: 4.6, y1: 6.8, style: 'glass' },       // 試験場 → 観察室（高窓）
     { axis: 'z', at: -152.6, from: 2, to: 24, y0: 4.6, y1: 6.8, style: 'glass' },
+  ],
+
+  // 予備腕の支給口（壁の箱。通常腕が足りなくなると、ここに足りない本数だけ出てくる）
+  // x,z は壁の位置、face は部屋の内側の向き。アリーナの中にも置く（閉じ込められても立て直せる）
+  armSupply: [
+    { x: -14, z: -30, face: 'e', name: '中央設備区画' },
+    { x: -27, z: -60, face: 'w', name: '検体保管庫' },
+    { x: 37, z: -27, face: 'w', name: '配管分岐室' },
+    { x: 22, z: -47, face: 'e', name: '搬送動力室' },
+    { x: 22, z: -77, face: 'e', name: '隔壁制御室' },
+    { x: 53, z: -92, face: 'w', name: '人体組立区画' },
+    { x: -10, z: -118, face: 'e', name: '大型試験場 西' },
+    { x: 36, z: -148, face: 'w', name: '大型試験場 東' },
   ],
 
   doors: [
@@ -136,7 +149,7 @@
     { x: -42, y: 3.6, z: -58, tone: 'spot' },         // 指定の腕
     { x: 44, y: 4.2, z: -105, tone: 'spot' },         // 組立台
     { x: 13, y: 7.0, z: -133, tone: 'fire' },         // 試験場の中央設備
-    { x: 13.7, y: 6.0, z: -108, tone: 'red' }, { x: 6.1, y: 6.0, z: -108, tone: 'red' }, { x: 9.9, y: 6.0, z: -83, tone: 'red' },
+    { x: 13.7, y: 6.0, z: -108, tone: 'warm' }, { x: 6.1, y: 6.0, z: -108, tone: 'red' }, { x: 9.9, y: 6.0, z: -83, tone: 'red' },
   ],
 
   props: [
@@ -205,8 +218,11 @@
     { type: 'sign', x: 0, y: 3.6, z: -79.95, face: 's', w: 3.0, h: 0.5, lines: ['検体搬送室'], style: 'plate' },
     // --- 検体搬送室（M3） ---
     { type: 'sign', x: -5.95, y: 4.4, z: -95, face: 'e', w: 3.4, h: 0.6, lines: ['搬送ライン 第四系統'], style: 'plate' },
-    { type: 'sign', x: 18, y: 3.8, z: -109.95, face: 's', w: 2.6, h: 0.5, lines: ['仕分け・搬出'], style: 'plate' },
-    { type: 'sign', x: 1.5, y: 2.2, z: -107.9, face: 's', w: 1.4, h: 0.8, lines: ['危険', '粉砕機'], style: 'warn' },
+    // 3本目の終点：搬出口（粉砕機ではない）
+    { type: 'sign', x: 13.7, y: 3.12, z: -107.33, face: 's', w: 2.3, h: 0.46, lines: ['検体搬出口'], style: 'plate' },
+    { type: 'sign', x: 13.7, y: 5.1, z: -109.95, face: 's', w: 3.0, h: 0.9, lines: ['検体12 搬送先', '→ 組立区画'], style: 'notice' },
+    { type: 'sign', x: 22, y: 2.6, z: -109.95, face: 's', w: 2.2, h: 0.5, lines: ['搬出台 → 組立区画'], style: 'stencil' },
+    { type: 'sign', x: 3.6, y: 2.4, z: -109.95, face: 's', w: 1.4, h: 0.8, lines: ['危険', '粉砕機'], style: 'warn' },
     // --- 人体組立区画（M4） ---
     { type: 'sign', x: 42, y: 3.8, z: -109.95, face: 's', w: 4.0, h: 0.6, lines: ['人体組立区画'], style: 'plate' },
     { type: 'frame', x: 44, z: -108.2, face: 's' },
@@ -339,12 +355,12 @@
   // M1：右腕01（粉砕せず検査装置に保管して、M4 で使う）
   armCheck: {
     tag: 'R01', label: '右腕01', side: 'RIGHT', kind: 'fist', mode: 'store',
-    device: '検査装置', prompt: '右腕を搬入する', door: 'dE',
+    device: '検査装置', door: 'dE',
     idleCrt: ['適合検査', '指定 右腕01'], okCrt: ['適合', '右腕01 保管'],
     crusher: { x: 11.8, z: -29.5, face: 'w', crt: [13.0, 3.6, -27.0], r: 2.4 },
   },
 
-  // M3：検体12（搬送ライン3本目。仕分け機で搬出台に下ろされる）
+  // M3：検体12（搬送ライン3本目。終点の搬出口を通って搬出台に下ろされる）
   specimen: {
     tag: '12', lane: 2, arms: ['fist', 'fist'], respawn: 4,
     unloadAt: [19.5, -106.2], unloadYaw: -Math.PI / 2,
@@ -357,7 +373,8 @@
     lanes: [
       { x: 6.1, dir: -1, speed: 1.4, gap: 7.5 },
       { x: 9.9, dir: 1, speed: 1.6, gap: 8.0 },
-      { x: 13.7, dir: -1, speed: 1.3, gap: 6.5, sort: true },
+      // 3本目の終点は粉砕機ではなく搬出口（次の区画＝搬出台へ送る）
+      { x: 13.7, dir: -1, speed: 1.3, gap: 6.5, exit: { unloadAt: [19.5, -106.2], unloadYaw: -Math.PI / 2 } },
     ],
   },
 

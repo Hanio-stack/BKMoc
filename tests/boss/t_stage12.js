@@ -82,18 +82,21 @@ const { setup } = require('./bt');
     return bad;
   }), []);
 
-  o.section('M1：右腕01（番号と左右を照合・壊れたら1本だけ補充・粉砕せず保管）');
+  o.section('M1：右腕01（番号で照合・どちらの手でも搬入できる・壊れたら1本だけ補充・粉砕せず保管）');
   await tp(9.6, -29.5, -90);
-  o.expect('検査装置のプロンプト', await pickLabel('右腕を搬入する'), '右腕を搬入する');
+  o.expect('検査装置のプロンプト：必要な腕を出す', await pickLabel('右腕01が必要（未装備）'), '右腕01が必要（未装備）');
   await key('KeyF', 200);
-  o.expect('番号のない腕は受け付けない', await ev(() => [STG.busy, !!STG.prog.done.M1]), [null, false]);
+  o.expect('番号のない腕は受け付けない', await ev(() => [!!STG.busy, !!STG.prog.done.M1]), [false, false]);
+  o.expect('理由が字幕に出る', (await subtitle()).indexOf('必要な腕は右腕01です') >= 0, true);
   await ev(() => { STG.prog.cleared.w1 = STG.prog.cleared.w2 = true; STG.enc.w1.state = STG.enc.w2.state = 'cleared'; });
   await tp(-41, -45, 0);
   await take('R02', 'RIGHT');
   o.expect('違う番号の腕（R02）', await ev(() => player.arms.RIGHT.tag), 'R02');
-  await tp(9.6, -29.5, -90); await pickLabel('右腕を搬入する');
+  await tp(9.6, -29.5, -90);
+  o.expect('違う番号を付けているとプロンプトに出る', await pickLabel('右腕01が必要（装備 R02）'), '右腕01が必要（装備 R02）');
   await key('KeyF', 300);
-  o.expect('指定外の番号は警告', (await subtitle()).indexOf('指定外の検体番号') >= 0, true);
+  o.expect('指定外の番号は理由を表示', (await subtitle()).indexOf('指定番号の腕ではありません') >= 0, true);
+  o.expect('受け付けない', await ev(() => [!!STG.busy, !!STG.prog.done.M1]), [false, false]);
   await tp(-42, -57.6, 180);
   o.expect('右腕01 は保管庫の台座にある', await ev(() => findTaggedArm('R01').where), 'ground');
   await take('R01', 'LEFT');
@@ -102,9 +105,13 @@ const { setup } = require('./bt');
   o.expect('取ると保管庫で待ち伏せ', await ev(() => STG.enc.sr.state), 'active');
   await o.waitFor(() => STG.enc.sr.pending.length === 0, 12000);
   await killEnc('sr');
-  await tp(9.6, -29.5, -90); await pickLabel('右腕を搬入する');
+  await tp(9.6, -29.5, -90);
+  o.expect('左手に付けた右腕01でも搬入できる', await pickLabel('右腕01を搬入する'), '右腕01を搬入する');
+  await ev(() => { player.arms.LEFT.purged = true; });
+  await wait(200);
+  o.expect('手首が無い（破損）とプロンプトに出る', await pickLabel('右腕01が破損している'), '右腕01が破損している');
   await key('KeyF', 300);
-  o.expect('左手のままでは「右腕として装着」', (await subtitle()).indexOf('右腕として装着') >= 0, true);
+  o.expect('破損の理由を表示', (await subtitle()).indexOf('指定腕が破損しています') >= 0, true);
   await ev(() => damageArm('LEFT', 999));
   o.expect('戦闘で壊れて無くなる', await ev(() => findTaggedArm('R01')), null);
   await o.waitFor(() => findTaggedArm('R01'), 15000);
@@ -112,15 +119,16 @@ const { setup } = require('./bt');
   await wait(1500);
   o.expect('増えない', await ev(() => severedParts.filter((p) => p.armState && p.armState.tag === 'R01').length), 1);
   await tp(-42, -57.6, 180);
-  await take('R01', 'RIGHT');
-  o.expect('右手に右腕01', await ev(() => player.arms.RIGHT.tag), 'R01');
-  await tp(9.6, -29.5, -90); await pickLabel('右腕を搬入する');
+  await take('R01', 'LEFT');
+  o.expect('左手に右腕01（右手は R02）', await ev(() => [player.arms.LEFT.tag, player.arms.RIGHT.tag]), ['R01', 'R02']);
+  await tp(9.6, -29.5, -90); await pickLabel('右腕01を搬入する');
   await key('KeyF', 100);
   o.expect('搬入中', await ev(() => STG.busy && STG.busy.what), 'crusher');
   await o.waitFor(() => !STG.busy, 15000);
   o.expect('M1 達成・腕は保管（粉砕しない）・扉が開く', await ev(() => [!!STG.prog.done.M1, !!STG.prog.stored.R01, STG.prog.stored.R01 && STG.prog.stored.R01.tag, !!STG.L.crusher.shown, STG.L.doors.dE.open]),
     [true, true, 'R01', true, true]);
-  o.expect('提出した腕は外れる', await ev(() => player.arms.RIGHT.lost), true);
+  o.expect('提出したのは右腕01 の手（左手）。R02 の手はそのまま', await ev(() => [player.arms.LEFT.lost, player.arms.RIGHT.tag]), [true, 'R02']);
+  o.expect('保管された腕は右腕のまま', await ev(() => STG.prog.stored.R01.side), 'RIGHT');
   o.expect('完了後は補充されない', await ev(() => { STG.tagRespawn.R01 = 99; return true; }), true);
   await wait(800);
   o.expect('（右腕01 は装置の中だけ）', await ev(() => findTaggedArm('R01')), null);
@@ -133,7 +141,7 @@ const { setup } = require('./bt');
   await tp(61.4, -19, -90);
   o.expect('バルブA', await pickLabel('バルブを回す'), 'バルブを回す');
   await key('KeyF', 300);
-  o.expect('銃腕では回らない', await ev(() => STG.busy), null);
+  o.expect('銃腕では回らない', await ev(() => !!STG.busy), false);
   await fists();
   await key('KeyF', 100);
   await o.waitFor(() => !STG.busy, 20000);
@@ -203,7 +211,7 @@ const { setup } = require('./bt');
   o.expect('検体12で運ばれる', await ev(() => [state, player.bodyTag]), ['STRAPPED', '12']);
   o.expect('目標：搬出口まで', await ev(() => stageObjective().text.indexOf('搬出口') >= 0), true);
   await o.waitFor(() => state === 'HUMAN', 60000);
-  o.expect('仕分け機で拘束が外れ、検体12の体で動ける', await ev(() => [state, player.bodyTag, +(playerPos.x - STG.L.X(19.5)).toFixed(1)]), ['HUMAN', '12', 0]);
+  o.expect('搬出口を通ると拘束が外れ、検体12の体で動ける', await ev(() => [state, player.bodyTag, +(playerPos.x - STG.L.X(19.5)).toFixed(1)]), ['HUMAN', '12', 0]);
   o.expect('検体12は自分だけ（重複なし）', await ev(() => corpses.filter((c) => c.bodyTag === '12').length), 0);
   await tp(33.6 + 1.6, -100, 90);
   o.expect('登録装置', await pickLabel('検体を登録する'), '検体を登録する');
@@ -305,11 +313,11 @@ const { setup } = require('./bt');
   o.expect('右腕01 と検体12 が戻る', await ev(() => [findTaggedArm('R01').where, corpses.filter((c) => c.bodyTag === '12').length]), ['ground', 1]);
   o.expect('組立台のランプも消える', await ev(() => STG.L.frame.lamps.LEFT.material.color.getHex()), 0x3a1410);
 
-  o.section('回帰：乗っ取りの途中で検体12が仕分け機に届いても、拘束が外れて検体12の体で動ける');
+  o.section('回帰：乗っ取りの途中で検体12が搬出口に届いても、拘束が外れて検体12の体で動ける');
   await toHead();
   await ev(() => {
     const L = STG.L, c = corpses.find((q) => q.bodyTag === '12'), ln = c.belt.lane;
-    c.belt.z = ln.kIn - ln.dir * 0.3; c.group.position.z = c.belt.z;   // 仕分け機の 0.3m 手前
+    c.belt.z = ln.kIn - ln.dir * 0.3; c.group.position.z = c.belt.z;   // 搬出口の 0.3m 手前
     playerPos.set(L.X(12.4), 0, c.belt.z);
     player.hp = 20;                                                     // 頭で長く移動して HP が減っている
     startPossess(c);
@@ -318,6 +326,45 @@ const { setup } = require('./bt');
   await o.waitFor(() => state === 'HUMAN', 4000);
   o.expect('搬出台で検体12の体になる（死なない・重複しない）', await ev(() => [state, player.bodyTag, player.hp > 0, STG.dead > 0,
     corpses.filter((c) => c.bodyTag === '12').length, +(playerPos.x - STG.L.X(19.5)).toFixed(1)]), ['HUMAN', '12', true, false, 0, 0]);
+
+  o.section('搬出口：3本目の終点は粉砕機ではない（ほかのベルトは粉砕機のまま）');
+  o.expect('3本目は搬出口（粉砕ドラムなし・誘導灯あり）、1・2本目は粉砕機', await ev(() => STG.L.conv.lanes.map((ln) => [!!ln.exit, ln.drums.length, ln.exit ? ln.exit.lamps.length > 4 : 0])),
+    [[false, 2, 0], [false, 2, 0], [true, 0, true]]);
+  o.expect('誘導灯が順に点く', await ev(() => { const ls = STG.L.conv.lanes[2].exit.lamps.filter((l) => !l.beacon); const a = ls.map((l) => l.m.material.color.getHex()); return new Set(a).size > 1; }), true);
+  // 検体12ではない体で搬出口を通っても、粉砕されずに搬出台へ出る（検体12だけの特別扱いはない）
+  await wait(300);
+  await toHead();
+  await ev(() => {
+    const L = STG.L, ln = L.conv.lanes[2];
+    const c = ln.bodies.find((q) => q.bodyTag !== '12');
+    c.belt.z = ln.kIn - ln.dir * 3.5; c.group.position.z = c.belt.z;
+    playerPos.set(L.X(12.4), 0, c.belt.z); window.__t = c;
+    startPossess(c);
+  });
+  await possessDone();
+  o.expect('（固定されて運ばれる）', await ev(() => state), 'STRAPPED');
+  await o.waitFor(() => state === 'HUMAN', 6000);
+  o.expect('ほかの番号の体でも搬出口から搬出台へ出る（死なない）', await ev(() => [state, player.bodyTag !== '12', player.hp > 0, STG.dead > 0,
+    +(playerPos.x - STG.L.X(19.5)).toFixed(1)]), ['HUMAN', true, true, false, 0]);
+  o.expect('指定の検体ではないと放送', (await subtitle()).indexOf('指定の検体（12）ではありません') >= 0, true);
+  // 頭だけでベルトに乗って搬出口へ入っても、粉砕されずに搬出台へ出る
+  await toHead();
+  await ev(() => { const L = STG.L, ln = L.conv.lanes[2]; playerPos.set(ln.x, 0, ln.kIn - ln.dir * 1.0); });
+  await o.waitFor(() => Math.abs(playerPos.x - STG.L.X(19.5)) < 0.1, 6000);
+  o.expect('頭だけでも搬出台へ出る', await ev(() => [state, headDead, STG.dead > 0, +(playerPos.x - STG.L.X(19.5)).toFixed(1)]), ['HEAD', false, false, 0]);
+  // 検体12の体でも、粉砕機のベルトに入れば死ぬ（無敵の例外は残っていない）
+  await ev(() => {
+    const L = STG.L, ln0 = L.conv.lanes[0];
+    for (const c of corpses.slice()) if (c.bodyTag === '12') removeCorpse(c);
+    const c = makeBeltCorpse(ln0, ln0.kIn - ln0.dir * 1.2, { bodyTag: '12', arms: armsFrom(['fist', 'fist']) });
+    playerPos.set(ln0.x - 1.3, 0, c.belt.z); window.__t = c;
+    startPossess(c);
+  });
+  await possessDone();
+  await o.waitFor(() => STG.dead > 0 || state === 'HUMAN', 6000);
+  o.expect('粉砕機に入れば検体12でも死ぬ', await ev(() => STG.dead > 0), true);
+  await o.waitFor(() => !STG.fade && !(STG.dead > 0) && state === 'HUMAN', 15000);
+  o.expect('チェックポイントから再開できる', await ev(() => [state, STG.area, player.hp > 0]), ['HUMAN', '1-2', true]);
   await key('KeyH', 100);
   await o.waitFor(() => !STG.fade && STG.area === 'safe', 8000);
   await tp(-5.2, 0, 90); await pickLabel('会話する');
