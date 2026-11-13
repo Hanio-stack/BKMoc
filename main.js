@@ -28,6 +28,8 @@
        自分が捨てた体は数も残りもそのまま残る。死体側には数を出さない（乗り移るまで分からない）
      F                落ちている/浮いている腕と交換
      T                ギミック検証室（スキャナ・弱点・爆弾腕を試す部屋。押すたびに作り直す）
+     H                セーフルームへ移動（暗転してワープ。受付で DEMO STAGE 1-1 を選べる）
+                      ※ステージの仕組みは stage.js、配置は stages/*.js。main.js からは入口だけ呼ぶ
      G                リセット
      Tab              今の目的を左上に表示／もう一度押すと消える
                       （上中央のコンパスは常に出ていて、赤い丸がゴールの方角）
@@ -719,6 +721,7 @@ const S = {
   RISE_OUT: 'RISE_OUT',   // Qを離して脊柱が縮む遷移中
   HEAD: 'HEAD',           // 頭モード（体を切り離した状態）
   POSSESS: 'POSSESS',     // 死体に乗り移る演出中
+  STRAPPED: 'STRAPPED',   // 搬送ベルトの死体に固定されている（stage.js。動けない・攻撃できない）
 };
 let state = S.HUMAN;
 
@@ -1242,7 +1245,7 @@ function createCorpse(x, z, rotY, opts) {
     if (a.purged) { arm.scale.y = 0.65; arm.position.y = -0.27; }
     pivot.add(arm);
     // 爆弾と手首アイテム。死体の腕もつながったまま（乗っ取るとそのまま自分の腕になる）
-    if (a.bomb || a.wrist) syncArmAddons(pivot, a, a.purged ? 'corpsePurged' : 'corpse', sx);
+    if (a.bomb || a.wrist || a.tag) syncArmAddons(pivot, a, a.purged ? 'corpsePurged' : 'corpse', sx);
     if (isGun) {
       const barrel = new THREE.Mesh(
         new THREE.CylinderGeometry(0.045, 0.055, 0.36, 8),
@@ -1565,6 +1568,9 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // ステージ（stage.js）：H でセーフルームへ／会話・暗転中の入力止め／F のインタラクト／Space の離脱
+  if (stageKeyHook(e)) return;
+
   // 目的の表示を開閉する（普段は隠れている）
   if (e.code === 'Tab') { toggleObjective(); return; }
 
@@ -1629,6 +1635,7 @@ document.addEventListener('keyup', (e) => {
 
 document.addEventListener('mousedown', (e) => {
   if (!locked() || manualOpen) return;
+  if (stageBlocksMouse()) return;      // 暗転・会話・バルブ操作中・搬送中は攻撃しない
   const side = e.button === 0 ? 'LEFT' : e.button === 2 ? 'RIGHT' : null;
   if (!side) return;
 
@@ -1697,6 +1704,7 @@ document.addEventListener('mouseup', (e) => {
 
 document.addEventListener('mousemove', (e) => {
   if (!locked() || BOSS.camLock || manualOpen) return;   // ジャンプスケア／操作説明中は視点を奪う
+  if (stageBlocksLook()) return;                          // 会話中・バルブを回している間も
   yaw -= e.movementX * CONFIG.mouseSensitivity;
   pitch -= e.movementY * CONFIG.mouseSensitivity;
   pitch = Math.max(-1.45, Math.min(1.45, pitch));
@@ -1711,7 +1719,7 @@ const startOverlay = document.getElementById('startOverlay');
 // Escape はロックしない＝これまでどおり ESC でマウスと全画面が解除される
 const LOCK_KEYS = [
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyR', 'KeyT', 'KeyN', 'KeyF', 'KeyG',
-  'KeyB', 'KeyV', 'KeyZ', 'KeyX', 'KeyC', 'Tab', 'Space',
+  'KeyB', 'KeyV', 'KeyZ', 'KeyX', 'KeyC', 'KeyH', 'Tab', 'Space',
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
 ];
 startOverlay.addEventListener('click', () => {
@@ -2053,6 +2061,7 @@ function inFinisher() {
 // 掴みフィニッシャー中も足を止める（敵を引き寄せる演出なので自分が動くと崩れる）
 function canMove() {
   if (manualOpen) return false;        // 操作説明を読んでいるあいだは足を止める
+  if (stageLocksMove()) return false;  // 暗転・会話・バルブ操作中
   if (inFinisher()) return false;
   return state === S.HUMAN || state === S.HEAD;
 }
@@ -3274,6 +3283,8 @@ function updateHeadMode(dt) {
    → 何も食らわなければちょうど10秒、殴られればそのぶん早い。          */
 function updateHeadBleed(dt) {
   if (player.hp <= 0) { killPlayerHead(); return; }   // 敵の攻撃や爆発で0になった場合
+  // 血液凝固ガスの中（セーフルーム・ステージの一部）では出血が止まる
+  if (stageBleedPaused()) { headBleedT = 0; lastBleedPos.set(playerPos.x, 0, playerPos.z); return; }
 
   const perTick = CONFIG.playerMaxHp / (CONFIG.headBleedDuration / CONFIG.headBleedTick);
   headBleedT += dt;
@@ -3396,6 +3407,7 @@ function finishPossess() {
   updateArmVisuals();
   if (ownBody) showFeedback('OLD BODY  HP ' + Math.round(player.hp), '#c8b98a', 30);
   else showFeedback('NEW BODY', '#7fc4a0', 30);
+  stageOnPossessed(c);   // ステージのギミック（搬送ベルトの体に固定／組み立てた体）
 }
 
 /* ---------- 蜘蛛脚の姿勢更新 ----------
@@ -5615,7 +5627,50 @@ function syncArmAddons(obj, st, frameKey, side) {
     const def = wantWrist ? WRIST_ITEMS[wantWrist] : null;
     if (def) { ad.wrist = def.build(frame, top); ad.root.add(ad.wrist); }
   }
+  // 番号のステンシル（ステージの「指定番号の腕」）。腕の状態の tag を前腕に貼る
+  const wantTag = (st && !st.lost && st.tag) ? st.tag : null;
+  if (ad.tagId !== wantTag) {
+    if (ad.tag) ad.root.remove(ad.tag);
+    ad.tag = null;
+    ad.tagId = wantTag;
+    if (wantTag) { ad.tag = buildTagAddon(frameKey, frame, top, wantTag, base.scale || 1); ad.root.add(ad.tag); }
+  }
   return ad;
+}
+
+// 腕の番号（例 01）。黄色いステンシルを前腕の表と裏に貼る。遠目にも読めるよう大きめ
+const TAG_OFF = { fp: 0.066, enemy: 0.105, corpse: 0.09, corpsePurged: 0.09, loose: 0.07, body: 0.07, bodyPurged: 0.07 };
+const _tagTex = {};
+function tagTexture(tag) {
+  if (_tagTex[tag]) return _tagTex[tag];
+  const cv = document.createElement('canvas');
+  cv.width = 128; cv.height = 128;
+  const c = cv.getContext('2d');
+  if (c) {
+    c.fillStyle = '#1a1a18'; c.fillRect(0, 0, 128, 128);
+    c.fillStyle = '#f0c21e';
+    c.font = 'bold 86px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(tag, 64, 70);
+    c.fillRect(8, 8, 112, 8); c.fillRect(8, 112, 112, 8);
+  }
+  _tagTex[tag] = new THREE.CanvasTexture(cv);
+  return _tagTex[tag];
+}
+function buildTagAddon(frameKey, frame, top, tag, scale) {
+  const g = new THREE.Group();
+  const size = (frameKey === 'fp' ? 0.1 : 0.15) / scale;
+  const off = (TAG_OFF[frameKey] || 0.07) / scale;
+  const mat = new THREE.MeshBasicMaterial({ map: tagTexture(tag) });
+  for (const s of [1, -1]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+    m.position.set(0, -frame.mid * (frameKey === 'fp' ? 1.0 : 0.9), 0).addScaledVector(top, off * s);
+    // 板の正面（+Z）を top の向きへ
+    m.rotation.y = Math.atan2(top.x * s, top.z * s);
+    if (frameKey === 'fp') m.rotation.z = Math.PI;   // 一人称は手前から見下ろすので、文字の上を前へ
+    g.add(m);
+  }
+  g.userData = { kind: 'tag', tag };
+  return g;
 }
 
 /* ---------- チェーン（乳首リング → 安全ピン）----------
@@ -6935,6 +6990,7 @@ function walkableAt(x, z, headMode) {
 
 // 振り回した／投げた敵が壁に当たったか（デモの廊下は壁判定なし。検証室は部屋の壁）
 function throwBlocked(x, z) {
+  if (STG.area) return stageThrowBlocked(x, z);
   if (DEMO.active) return false;
   if (LAB.active) {
     return Math.abs(x - LAB.cx) > LAB.hw - 0.4 || Math.abs(z - LAB.cz) > LAB.hd - 0.4;
@@ -6944,6 +7000,8 @@ function throwBlocked(x, z) {
 
 // 壁ずり付き。斜めに壁へ入ったときは通れる軸だけ残す
 function confinePlayer(prevX, prevZ) {
+  // ステージ（セーフルーム／1-1）は自分の空間だけで閉じている
+  if (STG.area) { stageConfine(prevX, prevZ); return; }
   // デモステージは自分の矩形と門だけで閉じている（ハブの矩形とは繋がっていない）
   if (DEMO.active) { demoConfine(); return; }
   if (LAB.active) { labConfine(); return; }
@@ -8313,6 +8371,7 @@ function updateBoss(dt, rdt, wdt) {
 
 // [B]：アリーナ入口へ飛んでボス戦をやり直す
 function warpToBoss() {
+  stageStop();
   demoStop();
   labStop();          // 検証室から B で来たときも、検証室の敵・台座・床の腕を片付けて出る
   resetBoss();
@@ -8734,6 +8793,7 @@ function updateLab() {
 
 /* ---------- リセット ---------- */
 function resetAll() {
+  stageStop();         // セーフルーム／ステージの敵・死体・腕を片付けて建物を下げる
   demoStop();          // デモの敵を消してから。enemies の並びを ENEMY_SPOTS に戻す
   labStop();           // 検証室の敵も同じ理由で先に消す
   player.hp = CONFIG.playerMaxHp;
@@ -9755,7 +9815,7 @@ signPrompt.innerHTML = '<span class="key">F</span>';
 document.body.appendChild(signPrompt);
 
 function signInRange() {
-  if (DEMO.active || LAB.active) return false;
+  if (DEMO.active || LAB.active || STG.area) return false;
   // 看板は頭より高い位置にあるので、3D距離だと真下に立っても遠く出る。水平距離で見る
   return Math.hypot(playerPos.x - RACK.signWorld.x, playerPos.z - RACK.signWorld.z) <= RACK.signRange;
 }
@@ -9823,6 +9883,7 @@ function toggleObjective() {
 // 今の目的。goal は _objGoal を書き換えて返す（ゴールがない場面は null）
 function currentObjective() {
   const at = (x, z) => _objGoal.set(x, 0, z);
+  if (STG.area) return stageObjective();
   if (LAB.active) {
     return { text: 'ギミック検証室：スキャナ・弱点・爆弾腕を試す（[T] で配置をやり直す / [G] でハブへ）',
              goal: null };
@@ -10060,6 +10121,8 @@ function animate() {
     p.obj.position.add(step);
     if (p.kind !== 'bullet') p.obj.rotation.x += 12 * dt;   // 手首だけ回転する
     p.travelled += step.length();
+    // ステージでは壁・柱・閉じた扉で止まる
+    if (STG.area && stageBlocksProjectile(p.obj.position)) { p.dead = true; continue; }
 
     // いちばん手前で線分に触れた敵を拾う（奥の敵に先に当たらないように）
     let hitEn = null, hitT = Infinity;
@@ -10143,6 +10206,8 @@ function animate() {
   /* --- デモステージのウェーブ --- */
   updateDemo(wdt);
   updateLab();
+  /* --- セーフルーム／ステージ（暗転・ギミック・戦闘・死んだときの復帰）--- */
+  updateStage(dt, rdt, wdt);
 
   /* --- プレイヤー見た目 --- */
   const inRising = (state === S.RISE_IN || state === S.RISING || state === S.RISE_OUT);
@@ -10348,6 +10413,7 @@ function animate() {
     const cam = headPos.clone().addScaledVector(fwd, -camDist);
     cam.y += CONFIG.headCamHeight;
     cam.y = Math.max(cam.y, 0.35);
+    stageHeadCam(cam);     // ステージでは壁の向こうへ出さない（ダクトの中は低く）
     camera.position.copy(cam);
     camera.lookAt(headPos.clone().addScaledVector(fwd, 4.0));
   } else if (!inRising) {
@@ -10357,6 +10423,7 @@ function animate() {
     updateNeckCamera(riseCamT);
   }
 
+  stageCameraHook();       // 搬送ベルトに固定されている間の一人称
   // カメラが決まってから、視界を塞ぐ脚を消す
   fadeSpiderLegs();
 
@@ -10432,6 +10499,7 @@ function animate() {
       }
     }
   }
+  stageHandsHook();        // バルブを両手で回している間の手
   /* --- 触手腕の見た目（アイドルのうねり／薙ぎ払い／伸ばした触手）--- */
   updateTentacleArms(rdt);
   /* --- 爆弾のランプ・チェーン、弱点の印、置いてある手首アイテム --- */
@@ -10500,7 +10568,7 @@ function animate() {
        : selectedTarget.kind === 'bossEat' ? 'BOSS EAT'
        : selectedTarget.entry.key) : 'NONE';
   const room = currentRoom();
-  ui.room.textContent = DEMO.active
+  ui.room.textContent = STG.area ? stageRoomLabel() : DEMO.active
     ? 'DEMO ' + (DEMO.phase === 'CLEAR' ? 'CLEAR' : 'W' + (Math.max(0, DEMO.wave) + 1))
     : LAB.active ? 'LAB' : (room ? room.name : 'HUB');
   const airborne = severedParts.filter((p) => p.phase === 'drift' || p.phase === 'eject').length;
@@ -10514,4 +10582,5 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-animate();
+// ページの読み込みが終わってから回し始める。stage.js（このあとに読む）が揃っている必要がある
+window.addEventListener('load', () => requestAnimationFrame(animate));
