@@ -31,6 +31,56 @@
 
 const BK_STAGES = window.BK_STAGES || {};
 
+/* ---------- ステージの登録（外部で作ったマップを足すときの入口） ----------
+   stages/ のファイルは BK_STAGES[id] = {...} と直接書いている（同梱の 1-1・1-2・セーフルーム）。
+   あとから足すマップ（例：別ツールから変換したデータ）は BK_registerStage(def, opts) で登録する。
+   ・id は英数字と - _ だけ。既にある id には上書きしない（ID 重複は拒否して警告に残す）
+   ・既存ステージの更新は opts.update = true のときだけ。version が今より新しいときに置き換える
+   ・知らないキー（このステージの仕組みがまだ扱えない要素）は読み飛ばさずに警告として記録する
+   記録は window.BK_STAGE_LOG（コンソールにも出す）。 */
+const BK_STAGE_KEYS = new Set(['id', 'label', 'title', 'kind', 'origin', 'fog', 'ambient', 'spawn', 'returnSpawn', 'spaces',
+  'windows', 'doors', 'gas', 'lights', 'props', 'researchers', 'receptionist', 'stageDoor', 'upgradeBench', 'selectable', 'walks',
+  'armSupply', 'chips', 'corpses', 'arms', 'encounters', 'valves', 'lockDoor', 'armCheck', 'conveyor', 'assemble', 'finale', 'goal',
+  'missions', 'checkpoints', 'speaker', 'fills', 'taggedArms', 'lockName', 'specimen', 'decoBelts', 'mega', 'version', 'source']);
+const BK_STAGE_LOG = window.BK_STAGE_LOG = [];
+function stageLog(level, id, msg) {
+  BK_STAGE_LOG.push({ level, id, msg });
+  (level === 'error' ? console.error : console.warn)('[BK stage ' + id + '] ' + msg);
+}
+// 形を確かめる。致命的な問題（errors）があれば登録しない。扱えない要素は warnings
+function validateStageDef(def) {
+  const errors = [], warnings = [];
+  if (!def || typeof def !== 'object') return { errors: ['定義がオブジェクトではない'], warnings };
+  if (typeof def.id !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(def.id)) errors.push('id が不正（英数字と - _ のみ）');
+  if (!Array.isArray(def.spaces) || !def.spaces.length) errors.push('spaces（部屋・通路）が無い');
+  if (!Array.isArray(def.origin) || def.origin.length !== 3) errors.push('origin が無い');
+  if (def.kind !== 'stage' && def.kind !== 'safe') errors.push('kind は stage か safe');
+  if (def.kind === 'stage' && !def.spawn && !(Array.isArray(def.checkpoints) && def.checkpoints.length)) errors.push('spawn（開始位置）も checkpoints も無い');
+  if (def.kind === 'stage' && !def.goal) warnings.push('goal（セーフルームへ戻る扉）が無い：クリアしても帰れない');
+  for (const k of Object.keys(def)) if (!BK_STAGE_KEYS.has(k)) warnings.push('未対応の要素「' + k + '」は読み込まれない');
+  for (const sp of def.spaces || []) {
+    if (!Array.isArray(sp.r) || sp.r.length !== 4) errors.push('空間 ' + (sp.id || '?') + ' の範囲 r が不正');
+    if (['room', 'corridor', 'duct', 'doorway', 'view', 'catwalk'].indexOf(sp.type) < 0) warnings.push('空間 ' + (sp.id || '?') + ' の種類「' + sp.type + '」は未対応');
+  }
+  return { errors, warnings };
+}
+function BK_registerStage(def, opts) {
+  opts = opts || {};
+  const v = validateStageDef(def);
+  const id = def && def.id || '?';
+  for (const w of v.warnings) stageLog('warn', id, w);
+  if (v.errors.length) { for (const e of v.errors) stageLog('error', id, e); return { ok: false, errors: v.errors, warnings: v.warnings }; }
+  const cur = BK_STAGES[id];
+  if (cur && cur !== def) {
+    if (!opts.update) { stageLog('error', id, 'ID が既にある（上書きしない。更新なら update を指定）'); return { ok: false, errors: ['duplicate'], warnings: v.warnings }; }
+    if (!((def.version || 0) > (cur.version || 0))) { stageLog('error', id, '更新の version が今より新しくない'); return { ok: false, errors: ['stale'], warnings: v.warnings }; }
+    if (STG.levels && STG.levels[id]) delete STG.levels[id];   // 作り直す
+  }
+  BK_STAGES[id] = def;
+  return { ok: true, errors: [], warnings: v.warnings };
+}
+window.BK_registerStage = BK_registerStage;
+
 /* ---------- 色と調整値 ---------- */
 const STAGE_CFG = {
   fadeTime: 0.45,          // 暗転・明転にかける時間(s)
@@ -1112,6 +1162,10 @@ function buildProp(L, p) {
       if (p.solid !== false) addSolid(L, F, w, d);
       break;
     }
+    case 'upgradeBench': {           // セーフルームのアップグレード台（upgrades.js）
+      buildUpgradeBench(L, p);
+      break;
+    }
     case 'counter': {
       lbox(B.wood, F, -p.w / 2, p.w / 2, 0, p.h, -p.d / 2, p.d / 2, 0x4e4032);
       lbox(B.wood, F, -p.w / 2 - 0.05, p.w / 2 + 0.05, p.h, p.h + 0.05, -p.d / 2 - 0.05, p.d / 2 + 0.05, 0x3a2e22);
@@ -1476,6 +1530,7 @@ function buildSwitchBody(L, F, p) {
 function buildGimmicks(L) {
   const def = L.def, B = L.batches, X = L.X, Z = L.Z;
   buildArmSupply(L);
+  upgBuildChips(L);
   // --- バルブ（ミッションA） ---
   if (def.valves) {
     L.valves = {};
@@ -2110,8 +2165,8 @@ function stageBleedPaused() {
 function stageInGas() { return stageBleedPaused(); }
 
 // 入力を止める場面
-function stageLocksMove() { return !!(STG.fade || STG.dialog || STG.busy || STG.dead > 0); }
-function stageBlocksMouse() { return !!(STG.fade || STG.dialog || STG.busy || STG.dead > 0 || state === S.STRAPPED); }
+function stageLocksMove() { return !!(STG.fade || STG.dialog || STG.busy || STG.dead > 0 || upgBenchOpen()); }
+function stageBlocksMouse() { return !!(STG.fade || STG.dialog || STG.busy || STG.dead > 0 || state === S.STRAPPED || upgBenchOpen()); }
 function stageBlocksLook() { return !!(STG.dialog || (STG.busy && STG.busy.kind === 'valve')); }
 
 function stageKeyHook(e) {
@@ -3181,11 +3236,20 @@ function stageCandidates() {
   if (def.kind === 'safe') {
     const rc = def.receptionist;
     if (human || head) out.push({ pos: new THREE.Vector3(L.X(rc.x), 1.4, L.Z(rc.z)), range: rc.r, label: '会話する', act: talkReception });
+    // アップグレード台（upgrades.js）
+    if (def.upgradeBench && human && UPG.benchProp && UPG.benchProp.L === L) {
+      out.push({ pos: UPG.benchProp.headWorld(), range: def.upgradeBench.r, label: 'アップグレード台を使う', act: openUpgradeBench });
+    }
     const sd = def.stageDoor;
     if (STG.selected && (human || head)) {
       out.push({ pos: new THREE.Vector3(L.X(sd.x), 1.6, L.Z(sd.z)), range: sd.r, label: '試験区画へ進む',
         act: () => { const id = STG.selected; stageFade(() => stageEnterArea(id)); } });
     }
+  }
+  // 落ちているチップ（人間でも頭でも拾える。upgrades.js）
+  if (human || head) for (const ck of L.chipPickups || []) {
+    if (upgChipCollected(def.id, ck.id)) continue;
+    out.push({ pos: ck.pos, range: 1.9, label: 'チップを回収する（' + CHIP_DEFS[ck.chip].name + '）', act: () => upgCollectChip(def.id, ck.id, ck.chip) });
   }
   if (human && def.kind === 'stage') {
     // バルブ

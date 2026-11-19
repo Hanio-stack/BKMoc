@@ -636,3 +636,76 @@ body.manual-on #compass { display: none; }
   font-size: 14px; letter-spacing: 0.18em; cursor: pointer;
 }
 #startSafe:hover { background: rgba(255, 233, 138, 0.2); }
+
+/* =========================================================
+   XP・頭スキル・ジェットパックの HUD とアップグレード台の画面（upgrades.js）
+   ========================================================= */
+#upgHud { position: fixed; inset: 0; pointer-events: none; z-index: 30; font-family: inherit; }
+#upgToast {
+  position: fixed; right: 26px; top: 120px; padding: 8px 14px 8px 12px;
+  background: rgba(10, 14, 10, 0.78); border-left: 4px solid #8fe08a; color: #e8f0e0;
+  display: flex; flex-direction: column; gap: 2px; min-width: 150px;
+}
+#upgToast b { font-size: 20px; color: #b8ff9a; letter-spacing: 0.04em; }
+#upgToast span { font-size: 12px; color: #a8b8a0; }
+#upgSkill {
+  position: fixed; left: 50%; bottom: 196px; transform: translateX(-50%);
+  min-width: 170px; height: 22px; background: rgba(8, 10, 12, 0.7); border: 1px solid #5a6a72;
+  color: #e0eef4; font-size: 12px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 0; overflow: hidden;
+}
+#upgSkill i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(90, 200, 255, 0.28); }
+#upgSkill.cool i { background: rgba(255, 120, 80, 0.22); }
+#upgSkill b { position: relative; background: #e0eef4; color: #10161a; padding: 0 7px; height: 100%; display: flex; align-items: center; }
+#upgSkill span { position: relative; }
+#upgJet {
+  position: fixed; left: calc(50% + 120px); bottom: 70px; width: 8px; height: 60px;
+  background: rgba(8, 10, 12, 0.7); border: 1px solid #6a5a40; display: flex; align-items: flex-end;
+}
+#upgJet i { display: block; width: 100%; background: #ffb050; }
+#upgToast.hidden, #upgSkill.hidden, #upgJet.hidden, #upgPanel.hidden { display: none; }
+
+/* アップグレード台：右側に置いた古い CRT 端末の画面（頭は左に見えている） */
+#upgPanel { position: fixed; right: 3vw; top: 50%; transform: translateY(-50%); z-index: 40; pointer-events: none; }
+#upgPanel .crt {
+  position: relative; width: 420px; padding: 16px 18px 14px; border-radius: 14px;
+  background: radial-gradient(ellipse at center, #0c2410 0%, #061208 70%, #030803 100%);
+  border: 10px solid #2a2c26; box-shadow: 0 0 0 2px #121410, 0 0 40px rgba(80, 255, 120, 0.12) inset;
+  color: #8dff9e; font-family: 'Courier New', 'MS Gothic', monospace; text-shadow: 0 0 6px rgba(110, 255, 140, 0.55);
+  animation: upgFlicker 4s infinite steps(1);
+}
+#upgPanel .crt::after {           /* 走査線 */
+  content: ''; position: absolute; inset: 0; border-radius: 6px; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.28) 0 1px, transparent 1px 3px);
+}
+@keyframes upgFlicker { 0%, 100% { opacity: 1; } 47% { opacity: 0.93; } 48% { opacity: 1; } 81% { opacity: 0.96; } }
+#upgPanel .hd { display: flex; justify-content: space-between; font-size: 15px; border-bottom: 1px solid rgba(140, 255, 160, 0.35); padding-bottom: 6px; }
+#upgPanel .hd .xp { color: #e8ffb0; }
+#upgPanel .tabs { display: flex; gap: 14px; margin: 8px 0 6px; font-size: 14px; }
+#upgPanel .tabs span { opacity: 0.45; }
+#upgPanel .tabs span.on { opacity: 1; border-bottom: 2px solid #8dff9e; }
+#upgPanel .body { display: flex; flex-direction: column; gap: 8px; }
+#upgPanel .list { list-style: none; margin: 0; padding: 0; font-size: 15px; }
+#upgPanel .list li { display: flex; gap: 8px; padding: 3px 6px; }
+#upgPanel .list li .nm { flex: 1; }
+#upgPanel .list li .pr { width: 92px; text-align: right; opacity: 0.85; }
+#upgPanel .list li .st { width: 64px; text-align: right; font-size: 12px; }
+#upgPanel .list li.on { background: rgba(140, 255, 160, 0.18); }
+#upgPanel .list li.on .nm::before { content: '▶ '; }
+#upgPanel .list li.st-buy .st { color: #c8ff7a; }
+#upgPanel .list li.st-short .st, #upgPanel .list li.st-short .pr { color: #ff8a70; text-shadow: 0 0 6px rgba(255, 110, 90, 0.5); }
+#upgPanel .list li.st-own .st { color: #8ad8ff; }
+#upgPanel .list li.st-eq .st { color: #fff07a; }
+#upgPanel .list li.st-none { opacity: 0.45; }
+#upgPanel .info { min-height: 92px; font-size: 13px; line-height: 1.55; border-top: 1px dashed rgba(140, 255, 160, 0.3); padding-top: 6px; }
+#upgPanel .msg { min-height: 20px; font-size: 13px; margin-top: 6px; }
+#upgPanel .msg.ok { color: #e8ffb0; }
+#upgPanel .msg.ng { color: #ff8a70; }
+#upgPanel .msg.busy { color: #fff07a; animation: upgBlink 0.5s infinite steps(2); }
+@keyframes upgBlink { 50% { opacity: 0.35; } }
+#upgPanel .bar { height: 4px; margin-top: 6px; background: rgba(140, 255, 160, 0.15); }
+#upgPanel .bar i { display: block; height: 100%; width: 0; background: #8dff9e; }
+#upgPanel.busy .bar i { animation: upgFill 1.6s linear forwards; }
+@keyframes upgFill { from { width: 0; } to { width: 100%; } }
+#upgPanel .keys { margin-top: 8px; font-size: 11px; opacity: 0.6; }
+/* アップグレード台を使っているあいだは、戦闘用の表示を隠す */
+body.upg-open #playerHud, body.upg-open #crosshair, body.upg-open #stagePrompt, body.upg-open #compass, body.upg-open #topLeft, body.upg-open #subtitle { visibility: hidden; }

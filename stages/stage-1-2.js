@@ -119,6 +119,12 @@
     { x: 36, z: -148, face: 'w', name: '大型試験場 東' },
   ],
 
+  // 落ちているチップ（Fで回収。id はステージの中で一意。回収済みは二度と出ない）
+  chips: [
+    { id: 'chip-rec', chip: 'oxytocin', x: 8.4, z: -2.2 },         // 検体記録室（ダクトの先）
+    { id: 'chip-hr1', chip: 'serotonin', x: -35.4, z: -13.0 },     // 腕の廃棄庫（隠し部屋）
+  ],
+
   doors: [
     { id: 'entryBack', axis: 'x', at: 10, from: -2, to: 2, h: 3.0, style: 'blast', decor: true },
     { id: 'dE', axis: 'z', at: 14, from: -24, to: -20, h: 2.6, style: 'blast', lamp: true },        // M1 で開く

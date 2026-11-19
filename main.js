@@ -1569,8 +1569,12 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // アップグレード台（upgrades.js）を開いているあいだは、台の操作だけを受け付ける
+  if (upgKeyHook(e)) return;
   // ステージ（stage.js）：H でセーフルームへ／会話・暗転中の入力止め／F のインタラクト／Space の離脱
   if (stageKeyHook(e)) return;
+  // 頭スキル（ビーム／バルカン）。E長押し（upgrades.js）
+  if (e.code === 'KeyE') { upgSkillKey(true); return; }
 
   // 目的の表示を開閉する（普段は隠れている）
   if (e.code === 'Tab') { toggleObjective(); return; }
@@ -1620,6 +1624,7 @@ document.addEventListener('keydown', (e) => {
     else if (state === S.HEAD && headGrounded && !headDead) {
       headVy = CONFIG.headJumpSpeed;
       headGrounded = false;
+      upgOnHeadJump();          // ジェットパック：跳んだあと長押しで飛ぶ
     }
     return;
   }
@@ -1630,6 +1635,7 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('keyup', (e) => {
   keys[e.code] = false;
+  if (e.code === 'KeyE') upgSkillKey(false);
   // Qを離したらライジング終了（頭モードに入ったあとは無関係）
   if (e.code === 'KeyQ' && (state === S.RISE_IN || state === S.RISING)) exitRising();
 });
@@ -1637,6 +1643,7 @@ document.addEventListener('keyup', (e) => {
 document.addEventListener('mousedown', (e) => {
   if (!locked() || manualOpen) return;
   if (stageBlocksMouse()) return;      // 暗転・会話・バルブ操作中・搬送中は攻撃しない
+  if (upgBenchOpen()) return;          // アップグレード台を操作中
   const side = e.button === 0 ? 'LEFT' : e.button === 2 ? 'RIGHT' : null;
   if (!side) return;
 
@@ -2068,8 +2075,9 @@ function canMove() {
 }
 
 function moveSpeedNow() {
-  if (state === S.HEAD) return CONFIG.headMoveSpeed;
-  return CONFIG.moveSpeed * (player.guard ? CONFIG.guardMoveMul : 1);
+  // チップ：オキシトシンで速くなる（upgrades.js）
+  if (state === S.HEAD) return CONFIG.headMoveSpeed * upgMoveMul();
+  return CONFIG.moveSpeed * (player.guard ? CONFIG.guardMoveMul : 1) * upgMoveMul();
 }
 
 function findTargetEnemy(range, angleDeg) {
@@ -2108,7 +2116,8 @@ function damageArm(side, amount) {
   const arm = player.arms[side];
   if (arm.lost) return;
   arm.hp = Math.max(0, arm.hp - amount);
-  if (arm.hp <= 0) loseArm(side);
+  // チップ：セロトニンが当たれば壊れずに全回復（1回の破損につき1回だけ抽選。upgrades.js）
+  if (arm.hp <= 0 && !upgArmBreakSave(side)) loseArm(side);
   updateArmVisuals();
 }
 
@@ -2180,6 +2189,7 @@ function updateGuard(rdt) {
 
 // 返り値: 'guard' = 腕が受けた / 'body' = 体（頭モードなら頭）が受けた
 function damagePlayer(amount) {
+  amount *= upgDamageTakenMul();      // チップ：オキシトシン（upgrades.js）
   if (player.guard && state === S.HUMAN) {
     const sides = ['LEFT', 'RIGHT'].filter((s) => !player.arms[s].lost);
     if (sides.length) {
@@ -2716,6 +2726,7 @@ function applyDamage(en, dmg) {
   }
   // 通常スタン中のダクトの男は、殴られるほど早く目を覚ます
   if (en.boss && en.state === E.STUNNED && dmg > 0) en.t += CONFIG.bossStunHitWake;
+  if (dmg > 0 && dmg < 900) dmg *= upgAttackMul();   // チップ：アドレナリン（とどめの大ダメージはそのまま）
   en.hp -= dmg;
   en.hitFlash = 0.12;
   if (en.hp <= 0) {
@@ -2845,6 +2856,7 @@ function killEnemy(en) {
   en.group.visible = false;
   createCorpse(en.group.position.x, en.group.position.z, en.group.rotation.y,
     { enemyStyle: true, arms: armsFromEnemy(en), fuse: CONFIG.corpseFuse });
+  upgOnEnemyKilled(en);      // XP（1体につき1回。upgrades.js）
 
   addHitstop(0.18);
   addShake(0.5);
@@ -3263,6 +3275,7 @@ function enterHeadMode() {
 }
 
 function updateHeadMode(dt) {
+  upgHeadThrust(dt);             // ジェットパック（購入済みのときだけ。upgrades.js）
   // 上がりは高く、落ちは速く。ふわっとさせないために重力を分けている
   const g = (headVy > 0) ? CONFIG.headGravity : CONFIG.headFallGravity;
   headVy -= g * dt;
@@ -7317,6 +7330,7 @@ function resetBoss() {
     clearWeak(en);                     // 弱点の印は体ごと（新しい体には付いていない）
     bossClearEat(en);                  // 食べかけの腕は消す（床にも落とさない）
     en.hp = en.maxHp; en.stun = 0; en.shoveLeft = 0; en.consecutiveHits = 0;
+    en.xpPaid = false;                 // 生き返ったので、また倒せば XP が入る
     en.kickCd = 0; en.riseCd = 0; en.gunCd = 0; en.eatCd = 0; en.eatHealed = 0;
     en.activeHitDone = false; en.grabK = 0; en.riseDone = false; en.shotDone = false;
     en.tetherVel.set(0, 0, 0); en.throwVel = null; en.kickVel = null;
@@ -7414,7 +7428,7 @@ function burstCorpseSpectacle(c) {
 function bossDefeated(en) {
   // R1・R2 は HP0 でそのまま逃げる（首が伸びて頭が抜け、体は死体として残る）。
   // とどめの入力（首切り／蹴り）が要るのは最終ラウンドの R3 だけ
-  if (BOSS.round >= 3) enterBossDown(en);
+  if (BOSS.round >= 3) { enterBossDown(en); upgOnEnemyKilled(en); }   // 最終ラウンドで倒したときだけ XP
   else startBossAutoFlee(en);
 }
 
@@ -8843,7 +8857,7 @@ function resetAll() {
   enemies.forEach((en, i) => {
     if (en.boss) return;                 // ダクトの男は resetBoss() が面倒を見る
     en.room = ROOMS[spots[i][4]]; en.home.set(spots[i][0], 0, spots[i][1]);
-    en.hp = CONFIG.enemyMaxHp; en.stun = 0; en.shoveLeft = 0;
+    en.hp = CONFIG.enemyMaxHp; en.stun = 0; en.shoveLeft = 0; en.xpPaid = false;
     en.consecutiveHits = 0; en.cooldown = 1.0 + Math.random();
     en.activeHitDone = false; en.headless = false; en.grabK = 0; en.tentGrab = false;
     en.tetherVel.set(0, 0, 0); en.throwVel = null; en.throwSpin = 0; en.smashCd = 0;
@@ -10213,6 +10227,8 @@ function animate() {
   updateLab();
   /* --- セーフルーム／ステージ（暗転・ギミック・戦闘・死んだときの復帰）--- */
   updateStage(dt, rdt, wdt);
+  /* --- XP・頭スキル・ジェットパック・アップグレード台（upgrades.js）--- */
+  upgUpdate(dt, rdt);
 
   /* --- プレイヤー見た目 --- */
   const inRising = (state === S.RISE_IN || state === S.RISING || state === S.RISE_OUT);
@@ -10429,6 +10445,7 @@ function animate() {
   }
 
   stageCameraHook();       // 搬送ベルトに固定されている間の一人称
+  upgCameraHook(rdt);      // アップグレード台の専用カメラ（upgrades.js）
   // カメラが決まってから、視界を塞ぐ脚を消す
   fadeSpiderLegs();
 
@@ -10440,7 +10457,7 @@ function animate() {
   }
 
   /* --- 一人称の手足 --- */
-  const showHands = (state === S.HUMAN);
+  const showHands = (state === S.HUMAN) && !upgHidesHands();
   for (const side of ['LEFT', 'RIGHT']) {
     const hand = fpHands[side];
     hand.visible = showHands && !hand.userData.lost;
