@@ -752,6 +752,8 @@ function upgSyncPlayerHead() {
   // headMesh は yaw に合わせて回っていないので、向きだけ合わせる
   headMesh.rotation.set(0, yaw, 0);
   upgSyncHeadParts(upgHeadParts);
+  // ライジング中は首のカメラのすぐ前に頭があるので、背中のタンクで視界を塞がないよう頭モードのときだけ出す
+  if (state !== S.HEAD) upgHeadParts.jetpack.visible = false;
   const flying = UPG.jet.flying;
   upgHeadParts.jetpack.traverse((o) => { if (o.name === 'flame') { o.visible = flying; o.scale.y = 0.8 + Math.random() * 0.5; } });
 }
