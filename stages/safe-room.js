@@ -50,6 +50,8 @@
     { type: 'shelf', x: -5.6, z: 6.4, w: 2.4, d: 0.6, h: 1.9, face: 'n' },
     { type: 'panel', x: 2.9, z: -6.95, face: 's', w: 1.0 },
     { type: 'puddle', x: 1.5, z: -1.2, r: 1.1 },
+    // アップグレード台（頭を固定する台座・CRT・ロボットアーム。upgrades.js）
+    { type: 'upgradeBench', x: 5.0, z: -4.4, face: 'w' },
   ],
   researchers: [
     { x: -9.0, z: 0.3, face: 'e', look: true, pose: 'stand' },
@@ -57,4 +59,6 @@
   // 受付（Fで会話）と大型扉（ステージを選んだあとFで出発）
   receptionist: { x: -6.5, z: 0, r: 2.6 },
   stageDoor: { door: 'big', x: 0, z: -6.2, r: 3.0 },
+  // アップグレード台（Fで使う）
+  upgradeBench: { r: 2.8 },
 };

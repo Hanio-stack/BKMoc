@@ -54,9 +54,9 @@ const { setup } = require('./bt');
   o.expect('受付のプロンプト', await pickLabel('会話する'), '会話する');
   await key('KeyF', 200);
   o.expect('会話UIが開く', await ev(() => !document.getElementById('stageDialog').classList.contains('hidden')), true);
-  o.expect('選択肢', await ev(() => [...document.querySelectorAll('#stageDialog li')].map((l) => l.textContent)), ['DEMO STAGE 1-1', 'DEMO STAGE 1-2', '戻る']);
+  o.expect('選択肢', await ev(() => [...document.querySelectorAll('#stageDialog li')].map((l) => l.textContent)), ['DEMO STAGE 1-1', 'DEMO STAGE 1-2', 'DEMO STAGE 1-3', 'LevelLab の JSON を読み込む（試遊）', '戻る']);   // 同梱 → 公開（LevelLab）→ 取り込み → 戻る
   o.expect('会話中は動けない', await ev(() => canMove()), false);
-  await key('KeyS'); await key('KeyS'); await key('KeyF');
+  await key('KeyW'); await key('KeyF');     // 一番上から W で一番下（戻る）へ
   o.expect('戻るで閉じる（選択なし）', await ev(() => [STG.dialog, STG.selected]), [null, null]);
   await tp(0, -5.4, 0);
   await wait(250);

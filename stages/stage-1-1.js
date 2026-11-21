@@ -141,6 +141,11 @@
     { x: -74, z: -110, face: 'e', name: '検体再構成室' },
   ],
 
+  // 落ちているチップ（Fで回収。id はステージの中で一意。回収済みは二度と出ない）
+  chips: [
+    { id: 'chip-hr1', chip: 'adrenaline', x: -6.8, z: -54.4 },     // 隠し部屋（第一制御室の点検口の奥）
+  ],
+
   doors: [
     { id: 'entryBack', axis: 'x', at: 6, from: -2, to: 2, h: 3.0, style: 'blast', decor: true },
     { id: 'dA', axis: 'x', at: -54, from: 14, to: 18, h: 2.6, style: 'blast', lamp: true },

@@ -6,6 +6,10 @@ https://hanio-stack.github.io/BKMoc/
 - 構成: `index.html` / `main.js`（戦闘・モードのロジック。調整値は `CONFIG` に集約）/ `style.css`。ビルドなし。
   ステージ（セーフルーム／DEMO STAGE 1-1・1-2）は `stage.js`（仕組み）と `stages/*.js`（配置データ）。
   main.js からはステージ中だけ stage.js の入口（`stageKeyHook` / `stageConfine` / `updateStage` など）を呼ぶ。
+  XP・アップグレード台・頭スキル（E）・ジェットパック・チップ・プレイヤーの保存（localStorage `bk.player`）は `upgrades.js`。
+  数値は `UPG_CFG`、品目は `UPG_SHOP` / `CHIP_DEFS`。デバッグはコンソールの `BKUpg.grant(n)` / `BKUpg.dump()` / `BKUpg.reset()`。
+  LevelLab（マップ制作ツール）の書き出し JSON の取り込みは `levellab.js`（全マップ共通。マップ専用のコードは書かない）。
+  公開ステージは `maps/manifest.js` の一覧と `maps/levellab/*.js`（`node tools/levellab-publish.js` で作る）。手順と形式は `maps/README.md`。
 - 設計資料 `BK_action-spec.md` / `BK_combat-mock_spec.md` は非公開（`.gitignore`）でリポジトリにない。
   仕様は `main.js` 冒頭のコメントが基準。
 
@@ -55,7 +59,8 @@ start index.html        # ブラウザで開いて確認
 ## その他
 
 - コミットメッセージは日本語で、何を変えたか分かるように書く。
-- `main.js` / `stage.js` / `stages/*.js` / `style.css` を変えたら、`index.html` の `?v=`（日付＋連番）を必ず上げる。
+- `main.js` / `stage.js` / `upgrades.js` / `levellab.js` / `stages/*.js` / `maps/*` / `style.css` を変えたら、`index.html` の `?v=`（日付＋連番）と
+  `window.BK_ASSET_V` を必ず上げる。
   GitHub Pages はファイルを約10分キャッシュさせるので、上げ忘れると古い `main.js` と
   新しい `index.html` が混ざって画面が真っ黒になる（2026-10-10 に実際に発生）。
 - オーナーの自宅PCの `deploy.ps1` は pull せずに `add -A → commit → push` するので、
