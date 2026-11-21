@@ -215,7 +215,19 @@ function convertLevelLabV7(json, opts, out) {
     switch (m.type) {
       case 'door': {
         checkRaw('door', raw, lab, m);
-        const axis = raw.axis === 'z' ? 'z' : 'x';
+        // 向き：raw.axis（x＝東西に延びる壁＝z 一定の線上、z＝南北の壁）。無ければ近い部屋の壁から決める
+        let axis = raw.axis === 'z' ? 'z' : raw.axis === 'x' ? 'x' : null;
+        if (!axis) {
+          let bd = 1e9;
+          for (const sp of def.spaces) {
+            const [a0, a1, b0, b1] = sp.r;
+            const inX = x >= a0 - 0.5 && x <= a1 + 0.5, inZ = z >= b0 - 0.5 && z <= b1 + 0.5;
+            if (inX) for (const e of [b0, b1]) if (Math.abs(z - e) < bd) { bd = Math.abs(z - e); axis = 'x'; }
+            if (inZ) for (const e of [a0, a1]) if (Math.abs(x - e) < bd) { bd = Math.abs(x - e); axis = 'z'; }
+          }
+          axis = axis || 'x';
+          notes.push('扉「' + (raw.id || it.id) + '」に向き（axis）が無い → 近い壁から「' + axis + '」');
+        }
         const w = m.width || (raw.to - raw.from) || 4;
         const d = { id: uniq(raw.id || it.id, 'door'), axis, at: axis === 'x' ? z : x,
           from: r3((axis === 'x' ? x : z) - w / 2), to: r3((axis === 'x' ? x : z) + w / 2),

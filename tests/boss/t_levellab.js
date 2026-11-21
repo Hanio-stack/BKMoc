@@ -234,6 +234,7 @@ const synth = JSON.parse(fs.readFileSync(path.join(FIX, 'synthetic', 'two-rooms.
   r = await bad("c.floors[0].items.find((i) => i.id === 'v1').mock.requires = ['cleared:nothing'];"); o.expect('無い戦闘を待つ条件はエラー（永遠に開かない）', [r.ok, has(r.errors, '戦闘「nothing」が無い')], [false, true]);
   r = await bad("c.floors[0].items.push({ id: 'q', type: 'polygon', points: [] }); c.floors[0].items.find((i) => i.id === 'pr').mock.raw.type = 'hologram';");
   o.expect('知らない要素・置物は警告（登録はできる）', [r.ok, has(r.warnings, 'polygon'), has(r.warnings, 'hologram')], [true, true, true]);
+  o.expect('扉に向き（axis）が無くても、乗っている壁から決まる', await ev((j) => { const c = JSON.parse(JSON.stringify(j)); delete c.floors[0].items.find((i) => i.id === 'd1').mock.raw.axis; const r = levelLabConvert(c, { idPrefix: 'x-' }); const d = r.def.doors.find((q) => q.id === 'gateB'); return [r.ok, d.axis, r.notes.some((n) => n.indexOf('axis') >= 0)]; }, synth), [true, 'x', true]);
   r = await bad("c.floors[0].items.find((i) => i.id === 'e2').mock.raw.arms = ['laser', 'fist'];"); o.expect('知らない腕の種類は警告', [r.ok, has(r.warnings, 'laser')], [true, true]);
 
   o.section('ローカル取り込み：受付から JSON ファイルを選ぶ（このブラウザだけ・ID は local-）');
