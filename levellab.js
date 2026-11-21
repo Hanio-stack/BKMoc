@@ -218,8 +218,11 @@ function convertLevelLabV7(json, opts, out) {
         // 向き：raw.axis（x＝東西に延びる壁＝z 一定の線上、z＝南北の壁）。無ければ近い部屋の壁から決める
         let axis = raw.axis === 'z' ? 'z' : raw.axis === 'x' ? 'x' : null;
         if (!axis) {
-          let bd = 1e9;
-          for (const sp of def.spaces) {
+          // 通路の中なら、通路を横切る向き（縦長の通路なら x、横長なら z）
+          const cor = def.spaces.find((sp) => sp.type === 'corridor' && x >= sp.r[0] - 0.01 && x <= sp.r[1] + 0.01 && z >= sp.r[2] - 0.01 && z <= sp.r[3] + 0.01);
+          if (cor) axis = (cor.r[3] - cor.r[2]) >= (cor.r[1] - cor.r[0]) ? 'x' : 'z';
+          let bd = cor ? -1 : 1e9;
+          for (const sp of (cor ? [] : def.spaces)) {
             const [a0, a1, b0, b1] = sp.r;
             const inX = x >= a0 - 0.5 && x <= a1 + 0.5, inZ = z >= b0 - 0.5 && z <= b1 + 0.5;
             if (inX) for (const e of [b0, b1]) if (Math.abs(z - e) < bd) { bd = Math.abs(z - e); axis = 'x'; }

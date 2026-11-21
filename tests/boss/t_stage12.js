@@ -40,7 +40,7 @@ const { setup } = require('./bt');
   await tp(-5.2, 0, 90);
   o.expect('受付', await pickLabel('会話する'), '会話する');
   await key('KeyF', 200);
-  o.expect('選択肢', await ev(() => [...document.querySelectorAll('#stageDialog li')].map((l) => l.textContent)), ['DEMO STAGE 1-1', 'DEMO STAGE 1-2', '戻る']);
+  o.expect('選択肢', await ev(() => [...document.querySelectorAll('#stageDialog li')].map((l) => l.textContent)), ['DEMO STAGE 1-1', 'DEMO STAGE 1-2', 'DEMO STAGE 1-3', 'LevelLab の JSON を読み込む（試遊）', '戻る']);
   await key('KeyS'); await key('KeyF');
   o.expect('1-2 を選んだ', await ev(() => STG.selected), '1-2');
   await tp(0, -5.4, 0);

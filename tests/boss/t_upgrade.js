@@ -57,7 +57,7 @@ const { setup } = require('./bt');
   o.expect('セーフルームにいる', await ev(() => STG.area), 'safe');
   await tp(-5.2, 0, 90); await pickLabel('会話する');
   await key('KeyF', 300);
-  o.expect('受付のステージ一覧', await ev(() => STG.dialog && STG.dialog.spec.choices.map((c) => c.label)), ['DEMO STAGE 1-1', 'DEMO STAGE 1-2', '戻る']);
+  o.expect('受付のステージ一覧', await ev(() => STG.dialog && STG.dialog.spec.choices.map((c) => c.label)), ['DEMO STAGE 1-1', 'DEMO STAGE 1-2', 'DEMO STAGE 1-3', 'LevelLab の JSON を読み込む（試遊）', '戻る']);
   await key('KeyF', 200);
   await tp(0, -5.4, 0); await pickLabel('試験区画へ進む'); await key('KeyF', 100);
   await o.waitFor(() => !STG.fade && STG.area === '1-1', 10000);
@@ -381,7 +381,7 @@ const { setup } = require('./bt');
   const mini = (id, extra) => Object.assign({ id, label: 'TEST ' + id, title: 'テスト ' + id, kind: 'stage', selectable: true, origin: [900, 0, 0], fog: { color: 0, near: 3, far: 30 }, ambient: { hemi: 0.5, dir: 0.2 },
     spawn: { x: 0, z: 2, yaw: 0 }, spaces: [{ id: 'r', type: 'room', r: [-4, 4, -4, 4], h: 4 }], goal: { door: 'g', x: 0, z: -3, r: 2 }, missions: [] }, extra || {});
   o.expect('新しい ID は2つとも登録できる', await ev((d) => [BK_registerStage(d[0]).ok, BK_registerStage(d[1]).ok], [mini('test-a'), mini('test-b', { origin: [960, 0, 0] })]), [true, true]);
-  o.expect('受付の一覧に並ぶ', await ev(() => Object.keys(BK_STAGES).filter((k) => BK_STAGES[k].selectable)), ['1-1', '1-2', 'test-a', 'test-b']);
+  o.expect('受付の一覧に並ぶ', await ev(() => Object.keys(BK_STAGES).filter((k) => BK_STAGES[k].selectable)), ['1-1', '1-2', 'll-1-3', 'test-a', 'test-b']);
   o.expect('未対応の要素は警告に残る', await ev((d) => BK_registerStage(d).warnings.some((w) => w.indexOf('hologram') >= 0), mini('test-c', { hologram: [1] })), true);
   o.expect('更新の指定なしでは上書きしない', await ev((d) => [BK_registerStage(d).ok, BK_STAGES['test-a'].title], mini('test-a', { title: '別物' })), [false, 'テスト test-a']);
   o.expect('update と新しい version なら更新できる', await ev((d) => [BK_registerStage(d, { update: true }).ok, BK_STAGES['test-a'].title], mini('test-a', { title: '更新版', version: 2 })), [true, '更新版']);
