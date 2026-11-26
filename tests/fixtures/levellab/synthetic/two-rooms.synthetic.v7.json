@@ -1,0 +1,375 @@
+{
+ "version": 7,
+ "title": "合成テスト区画",
+ "width": 40,
+ "height": 50,
+ "snap": true,
+ "floors": [
+  {
+   "id": "f1",
+   "name": "1F",
+   "z": 0,
+   "items": [
+    {
+     "id": "rA",
+     "type": "rect",
+     "x": 0,
+     "y": 20,
+     "w": 10,
+     "h": 10,
+     "label": "前室",
+     "mock": {
+      "type": "space",
+      "raw": {
+       "id": "roomA",
+       "type": "room",
+       "h": 4.5,
+       "tone": "cold",
+       "name": "前室"
+      }
+     },
+     "manualOpenings": []
+    },
+    {
+     "id": "c1",
+     "type": "corridor",
+     "x1": 5,
+     "y1": 20,
+     "x2": 5,
+     "y2": 14,
+     "width": 2,
+     "label": ""
+    },
+    {
+     "id": "rB",
+     "type": "rect",
+     "x": 0,
+     "y": 2,
+     "w": 14,
+     "h": 12,
+     "label": "弁室",
+     "mock": {
+      "type": "space",
+      "raw": {
+       "id": "roomB",
+       "type": "room",
+       "h": 5,
+       "tone": "warm",
+       "name": "弁室"
+      }
+     },
+     "manualOpenings": []
+    },
+    {
+     "id": "c2",
+     "type": "corridor",
+     "x1": 7,
+     "y1": 2,
+     "x2": 7,
+     "y2": -4,
+     "width": 2,
+     "label": ""
+    },
+    {
+     "id": "rX",
+     "type": "rect",
+     "x": 2,
+     "y": -14,
+     "w": 10,
+     "h": 10,
+     "label": "出口",
+     "mock": {
+      "type": "space",
+      "raw": {
+       "id": "exitRoom",
+       "type": "room",
+       "h": 4.5,
+       "tone": "cold",
+       "name": "出口"
+      }
+     },
+     "manualOpenings": []
+    },
+    {
+     "id": "g1",
+     "type": "gas",
+     "x": 3,
+     "y": 22,
+     "w": 3,
+     "h": 3,
+     "label": "凝固ガス"
+    },
+    {
+     "id": "sp",
+     "type": "icon",
+     "kind": "mock_spawn",
+     "x": 5,
+     "y": 27,
+     "label": "開始",
+     "mock": {
+      "type": "spawn",
+      "raw": {
+       "after": null,
+       "x": 0,
+       "z": 0,
+       "yaw": 0,
+       "arms": [
+        "fist",
+        "fist"
+       ]
+      }
+     }
+    },
+    {
+     "id": "cp",
+     "type": "icon",
+     "kind": "mock_corpse",
+     "x": 8,
+     "y": 11,
+     "label": "死体",
+     "mock": {
+      "type": "corpse",
+      "raw": {
+       "x": 0,
+       "z": 0,
+       "arms": [
+        "fist",
+        "fist"
+       ]
+      }
+     }
+    },
+    {
+     "id": "e1",
+     "type": "icon",
+     "kind": "mock_enemy",
+     "x": 4,
+     "y": 5,
+     "label": "敵1",
+     "mock": {
+      "type": "enemy",
+      "roomId": "roomB",
+      "wave": 1,
+      "raw": {
+       "arms": [
+        "fist",
+        "fist"
+       ],
+       "delay": 0.2,
+       "strong": false
+      }
+     }
+    },
+    {
+     "id": "e2",
+     "type": "icon",
+     "kind": "mock_enemy",
+     "x": 11,
+     "y": 6,
+     "label": "敵2",
+     "mock": {
+      "type": "enemy",
+      "roomId": "roomB",
+      "wave": 1,
+      "raw": {
+       "arms": [
+        "fist",
+        "gun"
+       ],
+       "delay": 0.5,
+       "strong": false
+      }
+     }
+    },
+    {
+     "id": "v1",
+     "type": "icon",
+     "kind": "mock_valve",
+     "x": 0.4,
+     "y": 8,
+     "label": "弁V1",
+     "mock": {
+      "type": "valve",
+      "raw": {
+       "id": "V1",
+       "face": "e",
+       "y": 1.35,
+       "color": 13648175,
+       "flag": "valveV1",
+       "line": "V1 開放。"
+      },
+      "requires": [
+       "cleared:fightB"
+      ],
+      "any": false
+     }
+    },
+    {
+     "id": "d1",
+     "type": "icon",
+     "kind": "mock_door",
+     "x": 7,
+     "y": 0,
+     "label": "gateB",
+     "mock": {
+      "type": "door",
+      "raw": {
+       "id": "gateB",
+       "axis": "x",
+       "h": 2.8,
+       "style": "blast",
+       "lamp": true
+      },
+      "width": 2
+     }
+    },
+    {
+     "id": "d2",
+     "type": "icon",
+     "kind": "mock_door",
+     "x": 7,
+     "y": -14,
+     "label": "goalDoor",
+     "mock": {
+      "type": "door",
+      "raw": {
+       "id": "goalDoor",
+       "axis": "x",
+       "h": 2.8,
+       "style": "blast",
+       "lamp": true,
+       "decor": true
+      },
+      "width": 4
+     }
+    },
+    {
+     "id": "gl",
+     "type": "icon",
+     "kind": "mock_goal",
+     "x": 7,
+     "y": -12,
+     "label": "帰還",
+     "mock": {
+      "type": "goal",
+      "raw": {
+       "door": "goalDoor",
+       "r": 2.6
+      }
+     }
+    },
+    {
+     "id": "s1",
+     "type": "icon",
+     "kind": "mock_supply",
+     "x": 14,
+     "y": 10,
+     "label": "支給口",
+     "mock": {
+      "type": "supply",
+      "raw": {
+       "face": "w",
+       "name": "弁室"
+      }
+     }
+    },
+    {
+     "id": "pr",
+     "type": "icon",
+     "kind": "mock_prop",
+     "x": 10,
+     "y": -6,
+     "label": "案内",
+     "mock": {
+      "type": "prop",
+      "raw": {
+       "type": "sign",
+       "face": "n",
+       "w": 2.4,
+       "h": 0.6,
+       "y": 2.4,
+       "style": "plate",
+       "lines": [
+        "出口"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "verticals": [],
+ "switchLinks": [],
+ "graph": {
+  "nodes": [],
+  "edges": []
+ },
+ "progression": {
+  "version": 1,
+  "rooms": [
+   {
+    "id": "roomA",
+    "title": "前室",
+    "type": "start",
+    "mapRoomId": "roomA"
+   },
+   {
+    "id": "roomB",
+    "title": "弁室",
+    "type": "area",
+    "mapRoomId": "roomB"
+   },
+   {
+    "id": "exitRoom",
+    "title": "出口",
+    "type": "end",
+    "mapRoomId": "exitRoom"
+   }
+  ],
+  "flags": [
+   {
+    "id": "cleared:fightB",
+    "title": "弁室 戦闘クリア",
+    "roomId": "roomB",
+    "kind": "event"
+   },
+   {
+    "id": "valve:V1",
+    "title": "弁V1",
+    "roomId": "roomB",
+    "kind": "valve"
+   }
+  ],
+  "links": [
+   {
+    "id": "l1",
+    "from": "roomA",
+    "to": "roomB",
+    "name": "通路",
+    "rules": [],
+    "mapDoorId": ""
+   },
+   {
+    "id": "l2",
+    "from": "roomB",
+    "to": "exitRoom",
+    "name": "gateB",
+    "rules": [
+     [
+      "valve:V1"
+     ]
+    ],
+    "mapDoorId": "gateB"
+   }
+  ],
+  "events": [
+   {
+    "id": "ev1",
+    "title": "戦闘",
+    "roomId": "roomB",
+    "triggerFlagId": "",
+    "note": "合成テスト：対象を排除してください。"
+   }
+  ]
+ }
+}

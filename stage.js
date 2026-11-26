@@ -31,6 +31,57 @@
 
 const BK_STAGES = window.BK_STAGES || {};
 
+/* ---------- ステージの登録（外部で作ったマップを足すときの入口） ----------
+   stages/ のファイルは BK_STAGES[id] = {...} と直接書いている（同梱の 1-1・1-2・セーフルーム）。
+   あとから足すマップ（例：別ツールから変換したデータ）は BK_registerStage(def, opts) で登録する。
+   ・id は英数字と - _ だけ。既にある id には上書きしない（ID 重複は拒否して警告に残す）
+   ・既存ステージの更新は opts.update = true のときだけ。version が今より新しいときに置き換える
+   ・知らないキー（このステージの仕組みがまだ扱えない要素）は読み飛ばさずに警告として記録する
+   記録は window.BK_STAGE_LOG（コンソールにも出す）。 */
+const BK_STAGE_KEYS = new Set(['id', 'label', 'title', 'kind', 'origin', 'fog', 'ambient', 'spawn', 'returnSpawn', 'spaces',
+  'windows', 'doors', 'gas', 'lights', 'props', 'researchers', 'receptionist', 'stageDoor', 'upgradeBench', 'selectable', 'walks',
+  'armSupply', 'chips', 'corpses', 'arms', 'encounters', 'valves', 'lockDoor', 'armCheck', 'conveyor', 'assemble', 'finale', 'goal',
+  'missions', 'checkpoints', 'speaker', 'fills', 'taggedArms', 'lockName', 'specimen', 'decoBelts', 'mega', 'version', 'source',
+  'valveObjective', 'levellab']);
+const BK_STAGE_LOG = window.BK_STAGE_LOG = [];
+function stageLog(level, id, msg) {
+  BK_STAGE_LOG.push({ level, id, msg });
+  (level === 'error' ? console.error : console.warn)('[BK stage ' + id + '] ' + msg);
+}
+// 形を確かめる。致命的な問題（errors）があれば登録しない。扱えない要素は warnings
+function validateStageDef(def) {
+  const errors = [], warnings = [];
+  if (!def || typeof def !== 'object') return { errors: ['定義がオブジェクトではない'], warnings };
+  if (typeof def.id !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(def.id)) errors.push('id が不正（英数字と - _ のみ）');
+  if (!Array.isArray(def.spaces) || !def.spaces.length) errors.push('spaces（部屋・通路）が無い');
+  if (!Array.isArray(def.origin) || def.origin.length !== 3) errors.push('origin が無い');
+  if (def.kind !== 'stage' && def.kind !== 'safe') errors.push('kind は stage か safe');
+  if (def.kind === 'stage' && !def.spawn && !(Array.isArray(def.checkpoints) && def.checkpoints.length)) errors.push('spawn（開始位置）も checkpoints も無い');
+  if (def.kind === 'stage' && !def.goal) warnings.push('goal（セーフルームへ戻る扉）が無い：クリアしても帰れない');
+  for (const k of Object.keys(def)) if (!BK_STAGE_KEYS.has(k)) warnings.push('未対応の要素「' + k + '」は読み込まれない');
+  for (const sp of def.spaces || []) {
+    if (!Array.isArray(sp.r) || sp.r.length !== 4) errors.push('空間 ' + (sp.id || '?') + ' の範囲 r が不正');
+    if (['room', 'corridor', 'duct', 'doorway', 'view', 'catwalk'].indexOf(sp.type) < 0) warnings.push('空間 ' + (sp.id || '?') + ' の種類「' + sp.type + '」は未対応');
+  }
+  return { errors, warnings };
+}
+function BK_registerStage(def, opts) {
+  opts = opts || {};
+  const v = validateStageDef(def);
+  const id = def && def.id || '?';
+  for (const w of v.warnings) stageLog('warn', id, w);
+  if (v.errors.length) { for (const e of v.errors) stageLog('error', id, e); return { ok: false, errors: v.errors, warnings: v.warnings }; }
+  const cur = BK_STAGES[id];
+  if (cur && cur !== def) {
+    if (!opts.update) { stageLog('error', id, 'ID が既にある（上書きしない。更新なら update を指定）'); return { ok: false, errors: ['duplicate'], warnings: v.warnings }; }
+    if (!((def.version || 0) > (cur.version || 0))) { stageLog('error', id, '更新の version が今より新しくない'); return { ok: false, errors: ['stale'], warnings: v.warnings }; }
+    if (STG.levels && STG.levels[id]) delete STG.levels[id];   // 作り直す
+  }
+  BK_STAGES[id] = def;
+  return { ok: true, errors: [], warnings: v.warnings };
+}
+window.BK_registerStage = BK_registerStage;
+
 /* ---------- 色と調整値 ---------- */
 const STAGE_CFG = {
   fadeTime: 0.45,          // 暗転・明転にかける時間(s)
@@ -1112,6 +1163,10 @@ function buildProp(L, p) {
       if (p.solid !== false) addSolid(L, F, w, d);
       break;
     }
+    case 'upgradeBench': {           // セーフルームのアップグレード台（upgrades.js）
+      buildUpgradeBench(L, p);
+      break;
+    }
     case 'counter': {
       lbox(B.wood, F, -p.w / 2, p.w / 2, 0, p.h, -p.d / 2, p.d / 2, 0x4e4032);
       lbox(B.wood, F, -p.w / 2 - 0.05, p.w / 2 + 0.05, p.h, p.h + 0.05, -p.d / 2 - 0.05, p.d / 2 + 0.05, 0x3a2e22);
@@ -1476,6 +1531,7 @@ function buildSwitchBody(L, F, p) {
 function buildGimmicks(L) {
   const def = L.def, B = L.batches, X = L.X, Z = L.Z;
   buildArmSupply(L);
+  upgBuildChips(L);
   // --- バルブ（ミッションA） ---
   if (def.valves) {
     L.valves = {};
@@ -1504,8 +1560,8 @@ function buildGimmicks(L) {
       const vl = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0x3a1410 }));
       vl.position.set(px + fx * 0.08 + (fz) * 0.45, v.y + 0.62, pz + fz * 0.08 - fx * 0.45);
       L.group.add(vl);
-      // 扉の上のランプ（A/B/C）
-      const lp = v.lamp;
+      // 扉の上のランプ（A/B/C）。指定が無ければバルブの上に付ける
+      const lp = v.lamp || [v.x + fx * 0.06, v.y + 1.1, v.z + fz * 0.06];
       const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.035, 6, 16), new THREE.MeshLambertMaterial({ color: v.color }));
       rim.position.set(X(lp[0]), lp[1], Z(lp[2]) + 0.03);
       L.group.add(rim);
@@ -1514,7 +1570,7 @@ function buildGimmicks(L) {
       L.group.add(bulb);
       textPlane(L, [v.id], 'plate', 0.26, 0.22, X(lp[0]), lp[1] - 0.34, Z(lp[2]) + 0.04, 's');
       // ランプからバルブまでの細い配管。色と文字で追える
-      const pts = v.pipe.map((q) => [X(q[0]), q[1], Z(q[2])]);
+      const pts = (v.pipe || []).map((q) => [X(q[0]), q[1], Z(q[2])]);
       for (let i = 0; i + 1 < pts.length; i++) {
         addRod(B.metal, pts[i], pts[i + 1], 0.055, v.color, 6);
         const el = new THREE.SphereGeometry(0.075, 6, 5);
@@ -2110,8 +2166,8 @@ function stageBleedPaused() {
 function stageInGas() { return stageBleedPaused(); }
 
 // 入力を止める場面
-function stageLocksMove() { return !!(STG.fade || STG.dialog || STG.busy || STG.dead > 0); }
-function stageBlocksMouse() { return !!(STG.fade || STG.dialog || STG.busy || STG.dead > 0 || state === S.STRAPPED); }
+function stageLocksMove() { return !!(STG.fade || STG.dialog || STG.busy || STG.dead > 0 || upgBenchOpen()); }
+function stageBlocksMouse() { return !!(STG.fade || STG.dialog || STG.busy || STG.dead > 0 || state === S.STRAPPED || upgBenchOpen()); }
 function stageBlocksLook() { return !!(STG.dialog || (STG.busy && STG.busy.kind === 'valve')); }
 
 function stageKeyHook(e) {
@@ -2141,18 +2197,24 @@ function newProgress(def) {
     used: {},        // 使い切った番号（粉砕・保管・台座に付けた）。以後は補充しない
   };
 }
+// parallel:true のミッションは順番を待たず、ほかと同時に進められる（順番の数には入らない）
 function missionIndex() {
   const ms = STG.def.missions;
   let i = 0;
-  while (i < ms.length && STG.prog.done[ms[i].id]) i++;
+  while (i < ms.length && (STG.prog.done[ms[i].id] || ms[i].parallel)) i++;
   return i;
 }
 function currentMission() { const ms = STG.def.missions; return ms[missionIndex()] || null; }
-function allMissionsDone() { return missionIndex() >= STG.def.missions.length; }
+function allMissionsDone() { return STG.def.missions.every((m) => STG.prog.done[m.id]); }
 
 // ミッションは種類（type）で呼ぶ。1-1 は A〜D、1-2 は M1〜M6 と ID が違っても同じ仕組みで動く
 function missionOf(type) { return STG.def.missions.find((m) => m.type === type) || null; }
-function isCurrent(type) { const m = currentMission(); return !!m && m.type === type; }
+function isCurrent(type) {
+  const m = currentMission();
+  if (m && m.type === type) return true;
+  const pm = STG.def.missions.find((q) => q.type === type && q.parallel);   // 並行して進められるミッション
+  return !!pm && !STG.prog.done[pm.id];
+}
 function typeDone(type) { const m = missionOf(type); return !!m && !!STG.prog.done[m.id]; }
 function completeType(type) { const m = missionOf(type); if (m) completeMission(m.id); }
 // 研究員の放送（字幕）。話者はステージのデータで決める
@@ -3024,12 +3086,25 @@ function updateSpecimen(dt) {
 /* =========================================================
    戦闘（通路戦・アリーナ）
    ========================================================= */
+// 条件の書き方：'種類:値' の文字列。配列は「すべて満たす」、配列の配列は「どれか1組を満たす」
+//   valves:n（バルブを n 個開けた）/ valve:A（バルブAを開けた）/ flag:名前 / done:ミッションID /
+//   cleared:戦闘ID（その戦闘を倒しきった）/ current:ミッションID（今そのミッション）
+const COND_KINDS = new Set(['valves', 'valve', 'flag', 'done', 'cleared', 'current']);
 function condOk(cond) {
   if (!cond) return true;
-  const [k, v] = cond.split(':');
-  if (k === 'valves') return Object.keys(STG.prog.valves).length >= +v;
-  if (k === 'flag') return !!STG.prog.flags[v];
-  if (k === 'done') return !!STG.prog.done[v];
+  if (Array.isArray(cond)) {
+    if (!cond.length) return true;
+    if (Array.isArray(cond[0])) return cond.some((c) => condOk(c));
+    return cond.every((c) => condOk(c));
+  }
+  const i = cond.indexOf(':');
+  const k = cond.slice(0, i), v = cond.slice(i + 1);
+  const P = STG.prog;
+  if (k === 'valves') return Object.keys(P.valves).length >= +v;
+  if (k === 'valve') return !!P.valves[v];
+  if (k === 'flag') return !!P.flags[v];
+  if (k === 'done') return !!P.done[v];
+  if (k === 'cleared') return !!P.cleared[v];
   if (k === 'current') { const m = currentMission(); return !!m && m.id === v; }
   return true;
 }
@@ -3060,7 +3135,7 @@ function startEncounter(rt) {
   rt.state = 'active';
   if (rt.def.startLine) announce(rt.def.startLine);
   if (rt.def.type === 'arena') {
-    for (const id of rt.def.doors) setDoor(id, false);
+    for (const id of (rt.def.doors || [])) setDoor(id, false);
     rt.wave = -1;
     nextWave(rt);
     addShake(0.4); doFlash(0.25, '#ff6a5a'); sfx('boom');
@@ -3078,7 +3153,7 @@ function clearEncounter(rt) {
   if (rt.def.clearLine) announce(rt.def.clearLine);
   STG.prog.cleared[rt.def.id] = true;
   if (rt.def.type === 'arena') {
-    for (const id of rt.def.doors) setDoor(id, true);
+    for (const id of (rt.def.doors || [])) setDoor(id, true);
     doFlash(0.25, '#9ce8ff'); sfx('lock');
   }
   if (rt.def.onClear && rt.def.onClear.open) {
@@ -3181,17 +3256,32 @@ function stageCandidates() {
   if (def.kind === 'safe') {
     const rc = def.receptionist;
     if (human || head) out.push({ pos: new THREE.Vector3(L.X(rc.x), 1.4, L.Z(rc.z)), range: rc.r, label: '会話する', act: talkReception });
+    // アップグレード台（upgrades.js）
+    if (def.upgradeBench && human && UPG.benchProp && UPG.benchProp.L === L) {
+      out.push({ pos: UPG.benchProp.headWorld(), range: def.upgradeBench.r, label: 'アップグレード台を使う', act: openUpgradeBench });
+    }
     const sd = def.stageDoor;
     if (STG.selected && (human || head)) {
       out.push({ pos: new THREE.Vector3(L.X(sd.x), 1.6, L.Z(sd.z)), range: sd.r, label: '試験区画へ進む',
         act: () => { const id = STG.selected; stageFade(() => stageEnterArea(id)); } });
     }
   }
+  // 落ちているチップ（人間でも頭でも拾える。upgrades.js）
+  if (human || head) for (const ck of L.chipPickups || []) {
+    if (upgChipCollected(def.id, ck.id)) continue;
+    out.push({ pos: ck.pos, range: 1.9, label: 'チップを回収する（' + CHIP_DEFS[ck.chip].name + '）', act: () => upgCollectChip(def.id, ck.id, ck.chip) });
+  }
   if (human && def.kind === 'stage') {
     // バルブ
     if (L.valves && isCurrent('valves')) for (const id in L.valves) {
       if (P.valves[id]) continue;
       const v = L.valves[id];
+      // 回せる条件（cond）がまだなら、理由を出す（押しても無反応にしない）
+      if (v.def.cond && !condOk(v.def.cond)) {
+        out.push({ pos: v.pos, range: 2.2, label: 'バルブ（まだ回らない）',
+          act: () => { stageMsg(PLAYER_SPEAKER + '：' + (v.def.condText || 'まだ圧力がかかっていない……'), 3.0); sfx('bonk'); } });
+        continue;
+      }
       out.push({ pos: v.pos, range: 2.2, label: 'バルブを回す', act: () => startValve(v) });
     }
     // 照合装置
@@ -3302,6 +3392,8 @@ function talkReception() {
       sfx('lock');
     },
   }));
+  // LevelLab で作ったマップをこのブラウザに取り込んで試遊する（levellab.js）
+  if (typeof levelLabPickFile === 'function') choices.push({ label: 'LevelLab の JSON を読み込む（試遊）', act: () => levelLabPickFile() });
   choices.push({ label: '戻る', act: () => {} });
   openDialog({ speaker: '受付研究員', text: '試験区画を選択してください。', choices });
 }
@@ -3410,11 +3502,16 @@ function stageObjective() {
     let best = null, bd = Infinity;
     for (const v of def.valves) {
       if (P.valves[v.id]) continue;
-      const d = Math.hypot(L.X(v.x) - playerPos.x, L.Z(v.z) - playerPos.z);
+      const d = Math.hypot(L.X(v.x) - playerPos.x, L.Z(v.z) - playerPos.z) + (v.cond && !condOk(v.cond) ? 1000 : 0);
       if (d < bd) { bd = d; best = v; }
     }
-    return { text: '3つのバルブを開いて第一閘門を開放する　' + marks,
-      goal: best ? at(L.X(best.x), L.Z(best.z)) : null };
+    // 文言はステージのデータ（valveObjective / lockName）で変えられる。approach は弁へ向かう途中の目印
+    const nV = def.valves.length;
+    const txt = def.valveObjective || (nV + 'つのバルブを開いて' + (def.lockName || '第一閘門') + 'を開放する');
+    let goal = best ? at(L.X(best.x), L.Z(best.z)) : null;
+    if (best && best.approach && Math.hypot(L.X(best.approach.x) - playerPos.x, L.Z(best.approach.z) - playerPos.z) > 6 &&
+        Math.hypot(L.X(best.x) - playerPos.x, L.Z(best.z) - playerPos.z) > 12) goal = at(L.X(best.approach.x), L.Z(best.approach.z));
+    return { text: txt + '　' + marks, goal };
   }
   if (m.type === 'armCheck') {
     const ac = def.armCheck;
@@ -3575,6 +3672,13 @@ function updateStage(dt, rdt, wdt) {
       STG.dead += rdt;
       if (STG.dead >= STAGE_CFG.deathWait && !STG.fade) stageFade(() => respawnAtCheckpoint(false));
     }
+  }
+  // 条件で開く扉（requires）。閉鎖中のアリーナの扉はアリーナに任せる
+  if (def.kind === 'stage') for (const d of (def.doors || [])) {
+    if (!d.requires || STG.prog.opened[d.id] || STG.dead > 0) continue;
+    const ar = arenaActive();
+    if (ar && (ar.def.doors || []).includes(d.id)) continue;
+    if (condOk(d.requires)) { setDoor(d.id, true); STG.prog.opened[d.id] = true; }
   }
   STG.pick = pickInteract();
   updatePrompt();
